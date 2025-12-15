@@ -1,0 +1,204 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Felica Gate Admin</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header>
+    <h1>🚉 Felica Gate — 管理画面</h1>
+    <div class="header-actions">
+      <button id="refreshAll" class="btn-primary">全て更新</button>
+    </div>
+  </header>
+
+  <div class="container">
+    <!-- ユーザー管理 -->
+    <section class="card">
+      <div class="section-header">
+        <h2>👥 ユーザー管理</h2>
+        <div class="section-actions">
+          <button id="addUser" class="btn-success">➕ ユーザー追加</button>
+          <button id="refreshUsers" class="btn-secondary">🔄 更新</button>
+        </div>
+      </div>
+      <div class="table-container">
+        <table id="usersTable">
+          <thead>
+            <tr>
+              <th>ID</th>
+              <th>名前</th>
+              <th>メール</th>
+              <th>残高</th>
+              <th>QRトークン</th>
+              <th>操作</th>
+            </tr>
+          </thead>
+          <tbody id="users"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- 定期券管理 -->
+    <section class="card">
+      <div class="section-header">
+        <h2>🎫 定期券管理</h2>
+        <div class="section-actions">
+          <button id="addPass" class="btn-success">➕ 定期券追加</button>
+          <button id="refreshPasses" class="btn-secondary">🔄 更新</button>
+        </div>
+      </div>
+      <div class="filter-bar">
+        <label>
+          <input type="checkbox" id="filterActivePasses" checked>
+          有効な定期券のみ表示
+        </label>
+      </div>
+      <div class="table-container">
+        <table id="passesTable">
+          <thead>
+            <tr>
+              <th>ID</th>
+              <th>ユーザー</th>
+              <th>種別</th>
+              <th>区間</th>
+              <th>有効期間</th>
+              <th>状態</th>
+              <th>操作</th>
+            </tr>
+          </thead>
+          <tbody id="passes"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- 入退場記録管理 -->
+    <section class="card">
+      <div class="section-header">
+        <h2>📝 入退場記録（Trips）</h2>
+        <div class="section-actions">
+          <button id="addTrip" class="btn-success">➕ 記録追加</button>
+          <button id="refreshTrips" class="btn-secondary">🔄 更新</button>
+        </div>
+      </div>
+      <div class="filter-bar">
+        <label>
+          ステータス:
+          <select id="tripStatusFilter">
+            <option value="">全て</option>
+            <option value="in_progress">入場中</option>
+            <option value="completed">完了</option>
+            <option value="cancelled">キャンセル</option>
+          </select>
+        </label>
+        <label>
+          表示件数:
+          <select id="tripLimitFilter">
+            <option value="20">20件</option>
+            <option value="50">50件</option>
+            <option value="100" selected>100件</option>
+            <option value="999999">全て</option>
+          </select>
+        </label>
+      </div>
+      <div class="table-container">
+        <table id="tripsTable">
+          <thead>
+            <tr>
+              <th>ID</th>
+              <th>ユーザー</th>
+              <th>入場</th>
+              <th>出場</th>
+              <th>支払方法</th>
+              <th>運賃</th>
+              <th>残高推移</th>
+              <th>ステータス</th>
+              <th>操作</th>
+            </tr>
+          </thead>
+          <tbody id="trips"></tbody>
+        </table>
+      </div>
+      <div id="tripPagination" class="pagination"></div>
+    </section>
+
+    <!-- カード管理 -->
+    <section class="card">
+      <div class="section-header">
+        <h2>💳 カード管理</h2>
+        <div class="section-actions">
+          <button id="refreshCards" class="btn-secondary">🔄 更新</button>
+        </div>
+      </div>
+      <div class="table-container">
+        <table id="cardsTable">
+          <thead>
+            <tr>
+              <th>ID</th>
+              <th>ユーザーID</th>
+              <th>種別</th>
+              <th>識別子</th>
+              <th>ラベル</th>
+            </tr>
+          </thead>
+          <tbody id="cards"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- 駅・ゲート管理 -->
+    <section class="card">
+      <div class="section-header">
+        <h2>🏢 駅・ゲート</h2>
+        <button id="refreshStations" class="btn-secondary">🔄 更新</button>
+      </div>
+      <div class="split-layout">
+        <div>
+          <h3>駅一覧</h3>
+          <div class="table-container">
+            <table id="stationsTable">
+              <thead>
+                <tr>
+                  <th>ID</th>
+                  <th>コード</th>
+                  <th>駅名</th>
+                </tr>
+              </thead>
+              <tbody id="stations"></tbody>
+            </table>
+          </div>
+        </div>
+        <div>
+          <h3>ゲート一覧</h3>
+          <div class="table-container">
+            <table id="gatesTable">
+              <thead>
+                <tr>
+                  <th>ID</th>
+                  <th>コード</th>
+                  <th>駅ID</th>
+                  <th>名称</th>
+                </tr>
+              </thead>
+              <tbody id="gates"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <!-- モーダルダイアログ -->
+  <div id="modal" class="modal">
+    <div class="modal-content">
+      <span class="close">&times;</span>
+      <h2 id="modalTitle">タイトル</h2>
+      <div id="modalBody"></div>
+    </div>
+  </div>
+
+  <script src="api.js"></script>
+</body>
+</html>
