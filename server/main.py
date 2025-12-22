@@ -1065,7 +1065,7 @@ def verify_face(req: schemas.FaceVerifyRequest, db: Session = Depends(get_db)):
         verify_result = face_rec.verify_faces(
             req.face_image_base64,
             stored_embedding,
-            threshold=0.6  # Facenetの推奨閾値（調整可能）
+            threshold=10.0  # Facenet L2距離の推奨閾値（調整可能）
         )
 
         print(f"   ユーザーID {face_data.user_id}: 距離={verify_result['distance']:.4f}, 類似度={verify_result.get('similarity', 0):.2f}%")
@@ -1260,7 +1260,7 @@ async def verify_face_upload(
             verify_result = face_rec.verify_faces(
                 base64_image,
                 stored_embedding,
-                threshold=0.6  # Facenetの推奨閾値
+                threshold=10.0  # Facenet L2距離の推奨閾値
             )
 
             print(f"   ユーザーID {face_data.user_id}: 距離={verify_result['distance']:.4f}, 認証={'成功' if verify_result['verified'] else '失敗'}")
@@ -1308,6 +1308,46 @@ async def verify_face_upload(
             "status": "error",
             "verified": False,
             "message": f"顔認証に失敗: {str(e)}"
+        }
+
+@app.get("/face/status/{user_id}")
+def get_face_status(user_id: int, db: Session = Depends(get_db)):
+    """
+    顔登録状態を確認
+
+    Args:
+        user_id: ユーザーID
+
+    Returns:
+        登録状態と登録日時
+    """
+    try:
+        # アクティブな顔データを検索
+        face_data = db.query(models.FaceData).filter(
+            models.FaceData.user_id == user_id,
+            models.FaceData.is_active == 1
+        ).first()
+
+        if face_data:
+            return {
+                "user_id": user_id,
+                "is_registered": True,
+                "registered_at": face_data.registered_at.isoformat() if face_data.registered_at else None,
+                "updated_at": face_data.updated_at.isoformat() if face_data.updated_at else None
+            }
+        else:
+            return {
+                "user_id": user_id,
+                "is_registered": False,
+                "registered_at": None,
+                "updated_at": None
+            }
+
+    except Exception as e:
+        return {
+            "user_id": user_id,
+            "is_registered": False,
+            "error": str(e)
         }
 
 # Cards管理エンドポイント

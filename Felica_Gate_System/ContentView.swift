@@ -44,6 +44,8 @@ struct GateView: View {
     @State private var scanResult: ScanResult?
     @State private var isProcessing = false
     @State private var clearDisplayToken = UUID()
+    @State private var scanMode: ScanMode = .qr  // QR または 顔認証
+    @State private var showFaceCamera = false
 
     @AppStorage("station_code") private var stationCode = "STATION_1"
     @AppStorage("gate_code") private var gateCode = "STATION_1_IN"
@@ -51,6 +53,11 @@ struct GateView: View {
 
     private var apiClient: APIClient {
         APIClient(baseURL: URL(string: serverURL)!)
+    }
+
+    enum ScanMode {
+        case qr
+        case face
     }
 
     var body: some View {
@@ -182,13 +189,58 @@ struct GateView: View {
                         } else {
                             // 初期状態
                             VStack(spacing: 15) {
-                                Image(systemName: "qrcode.viewfinder")
+                                // モード切替ボタン
+                                HStack(spacing: 20) {
+                                    Button(action: { scanMode = .qr }) {
+                                        VStack(spacing: 8) {
+                                            Image(systemName: "qrcode.viewfinder")
+                                                .font(.system(size: 40))
+                                            Text("QRコード")
+                                                .font(.caption)
+                                        }
+                                        .frame(width: 100, height: 80)
+                                        .background(scanMode == .qr ? Color.blue.opacity(0.2) : Color.gray.opacity(0.1))
+                                        .foregroundColor(scanMode == .qr ? .blue : .gray)
+                                        .cornerRadius(12)
+                                    }
+
+                                    Button(action: { scanMode = .face }) {
+                                        VStack(spacing: 8) {
+                                            Image(systemName: "faceid")
+                                                .font(.system(size: 40))
+                                            Text("顔認証")
+                                                .font(.caption)
+                                        }
+                                        .frame(width: 100, height: 80)
+                                        .background(scanMode == .face ? Color.green.opacity(0.2) : Color.gray.opacity(0.1))
+                                        .foregroundColor(scanMode == .face ? .green : .gray)
+                                        .cornerRadius(12)
+                                    }
+                                }
+                                .padding(.bottom, 10)
+
+                                Image(systemName: scanMode == .qr ? "qrcode.viewfinder" : "faceid")
                                     .font(.system(size: 80))
                                     .foregroundColor(.gray)
 
-                                Text("QRコードをスキャンしてください")
+                                Text(scanMode == .qr ? "QRコードをスキャンしてください" : "顔認証で入退場できます")
                                     .font(.title3)
                                     .foregroundColor(.secondary)
+
+                                if scanMode == .face {
+                                    Button(action: { showFaceCamera = true }) {
+                                        HStack {
+                                            Image(systemName: "camera.fill")
+                                            Text("顔認証を開始")
+                                        }
+                                        .font(.headline)
+                                        .foregroundColor(.white)
+                                        .padding()
+                                        .background(Color.green)
+                                        .cornerRadius(12)
+                                    }
+                                    .padding(.top, 10)
+                                }
                             }
                             .padding()
                             .frame(maxWidth: .infinity, minHeight: 250)
@@ -202,12 +254,29 @@ struct GateView: View {
 
                 Divider()
 
-                // 下部：QRスキャナー（1/3の高さ）
+                // 下部：QRスキャナー または 顔認証ボタン（1/3の高さ）
                 ZStack {
-                    QRScannerView { token in
-                        sendScan(qrToken: token)
+                    if scanMode == .qr {
+                        QRScannerView { token in
+                            sendScan(qrToken: token)
+                        }
+                        .frame(height: geometry.size.height * 1 / 3)
+                    } else {
+                        // 顔認証モードの場合は空白
+                        Color(UIColor.systemBackground)
+                            .frame(height: geometry.size.height * 1 / 3)
+                            .overlay(
+                                VStack(spacing: 15) {
+                                    Image(systemName: "faceid")
+                                        .font(.system(size: 60))
+                                        .foregroundColor(.green.opacity(0.5))
+
+                                    Text("上のボタンから顔認証を開始")
+                                        .font(.subheadline)
+                                        .foregroundColor(.secondary)
+                                }
+                            )
                     }
-                    .frame(height: geometry.size.height * 1 / 3)
 
                     // スキャン中のオーバーレイ
                     if isProcessing {
@@ -228,6 +297,17 @@ struct GateView: View {
             }
         }
         .edgesIgnoringSafeArea(.bottom)
+        .fullScreenCover(isPresented: $showFaceCamera) {
+            FaceCameraView(
+                onCapture: { image in
+                    showFaceCamera = false
+                    sendFaceVerify(faceImage: image)
+                },
+                onCancel: {
+                    showFaceCamera = false
+                }
+            )
+        }
     }
 
     private func sendScan(qrToken: String) {
@@ -259,6 +339,69 @@ struct GateView: View {
                     scheduleClearDisplay()
                 }
             }
+        }
+    }
+
+    private func sendFaceVerify(faceImage: UIImage) {
+        isProcessing = true
+        resultMessage = ""
+        scanResult = nil
+        cancelScheduledClear()
+
+        apiClient.postFaceVerify(faceImage: faceImage) { result in
+            DispatchQueue.main.async {
+                isProcessing = false
+
+                switch result {
+                case .success(let data):
+                    handleFaceVerifyResponse(data)
+                case .failure(let error):
+                    resultMessage = "ネットワークエラー:\n\(error.localizedDescription)"
+                    scanResult = nil
+                    GateSound.playError()
+                    scheduleClearDisplay()
+                }
+            }
+        }
+    }
+
+    private func handleFaceVerifyResponse(_ data: Data) {
+        do {
+            let json = try JSONSerialization.jsonObject(with: data) as? [String: Any]
+
+            if let status = json?["status"] as? String, status == "success",
+               let verified = json?["verified"] as? Bool, verified == true {
+                // 顔認証成功
+                let userId = json?["user_id"] as? Int
+                let userName = json?["user_name"] as? String
+                let balance = json?["balance"] as? Double
+
+                GateSound.playSuccess()
+
+                // 入場処理（顔認証では常に入場）
+                scanResult = ScanResult(
+                    mode: "entry",
+                    userName: userName,
+                    balance: balance,
+                    stationCode: stationCode,
+                    gateCode: gateCode,
+                    usageAmount: nil
+                )
+
+                scheduleClearDisplay()
+            } else {
+                // 顔認証失敗
+                let message = json?["message"] as? String ?? "顔認証に失敗しました"
+                resultMessage = "エラー:\n\(message)"
+                scanResult = nil
+                GateSound.playError()
+                scheduleClearDisplay()
+            }
+        } catch {
+            resultMessage = "応答の解析に失敗しました"
+            scanResult = nil
+            GateSound.playError()
+            scheduleClearDisplay()
         }
     }
 

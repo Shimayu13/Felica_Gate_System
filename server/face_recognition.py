@@ -81,24 +81,45 @@ def extract_face_embedding(image_path: str) -> list:
     Raises:
         ValueError: 顔が検出できない場合
     """
+    # 検出器を順番に試す（精度の高い順）
+    detectors = ["retinaface", "mtcnn", "ssd", "opencv"]
+    last_error = None
+
     try:
-        # DeepFaceで顔の特徴量を抽出
-        # モデル: VGG-Face (高精度), Facenet (高速), OpenFace, DeepFace, ArcFace
-        embedding_objs = DeepFace.represent(
-            img_path=image_path,
-            model_name="Facenet",  # Facenetは高速で精度も良い
-            enforce_detection=True,  # 顔が検出できない場合はエラー
-            detector_backend="opencv"  # opencv, ssd, dlib, mtcnn, retinaface, mediapipe
+        for detector in detectors:
+            try:
+                print(f"   顔検出試行: {detector} detector")
+
+                # DeepFaceで顔の特徴量を抽出
+                embedding_objs = DeepFace.represent(
+                    img_path=image_path,
+                    model_name="Facenet",  # Facenetは高速で精度も良い
+                    enforce_detection=True,  # 顔が検出できない場合はエラー
+                    detector_backend=detector
+                )
+
+                if embedding_objs and len(embedding_objs) > 0:
+                    # 最初の顔の特徴量を取得
+                    embedding = embedding_objs[0]["embedding"]
+                    print(f"   ✓ 顔検出成功: {detector} detector")
+                    return embedding
+
+            except Exception as e:
+                print(f"   ✗ {detector} detector失敗: {str(e)[:100]}")
+                last_error = e
+                continue
+
+        # すべての検出器で失敗した場合
+        raise ValueError(
+            "顔が検出できませんでした。以下を確認してください：\n"
+            "・顔が正面を向いているか\n"
+            "・顔が画像の中央にあるか\n"
+            "・照明が十分か\n"
+            "・画像が鮮明か"
         )
 
-        if not embedding_objs or len(embedding_objs) == 0:
-            raise ValueError("顔が検出できませんでした")
-
-        # 最初の顔の特徴量を取得
-        embedding = embedding_objs[0]["embedding"]
-
-        return embedding
-
+    except ValueError:
+        raise
     except Exception as e:
         raise ValueError(f"顔の特徴量抽出に失敗: {str(e)}")
 
@@ -107,14 +128,14 @@ def extract_face_embedding(image_path: str) -> list:
         if os.path.exists(image_path):
             os.remove(image_path)
 
-def verify_faces(face_image_base64: str, stored_embedding: list, threshold: float = 0.4) -> dict:
+def verify_faces(face_image_base64: str, stored_embedding: list, threshold: float = 10.0) -> dict:
     """
     顔画像と保存された特徴量を比較
 
     Args:
         face_image_base64: Base64エンコードされた顔画像
         stored_embedding: データベースに保存された顔の特徴量
-        threshold: 類似度の閾値 (0.0-1.0, 低いほど厳しい)
+        threshold: 類似度の閾値 (Facenet L2距離: 推奨10.0, 低いほど厳しい)
 
     Returns:
         dict: {

@@ -5,9 +5,10 @@ from datetime import datetime
 class ScanRequest(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
-    scan_source: str
+    scan_source: str  # "qr", "felica", or "face"
     card_idm: Optional[str] = None
     qr_token: Optional[str] = None
+    face_image_base64: Optional[str] = None  # Base64エンコードされた顔画像（face認証時）
     station_code: str
     gate_code: str
     timestamp: datetime
