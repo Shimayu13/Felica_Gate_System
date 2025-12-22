@@ -1,4 +1,4 @@
-from fastapi import FastAPI, Depends, HTTPException
+from fastapi import FastAPI, Depends, HTTPException, File, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
 from sqlalchemy import text
@@ -7,10 +7,13 @@ from decimal import Decimal
 from typing import Optional, List
 import os
 import sqlite3
+import base64
 
 from database import engine, Base, get_db
 import models
 import schemas
+import face_recognition as face_rec
+import json
 
 app = FastAPI(title="Felica Gate Server")
 
@@ -977,6 +980,335 @@ def get_purchase(purchase_id: int, db: Session = Depends(get_db)):
     if not purchase:
         raise HTTPException(status_code=404, detail="purchase not found")
     return purchase
+
+# 顔認証エンドポイント
+@app.post("/face/register")
+def register_face(req: schemas.FaceRegisterRequest, db: Session = Depends(get_db)):
+    """
+    ユーザーの顔を登録
+    """
+    print(f"\n👤 [顔登録] ユーザーID: {req.user_id}")
+
+    # ユーザーが存在するか確認
+    user = db.query(models.User).filter(models.User.id == req.user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="user not found")
+
+    # 顔の特徴量を抽出
+    result = face_rec.register_face(req.user_id, req.face_image_base64)
+
+    if not result["success"]:
+        return {
+            "status": "error",
+            "message": result["message"]
+        }
+
+    # 既存の顔データがあれば更新、なければ新規作成
+    face_data = db.query(models.FaceData).filter(models.FaceData.user_id == req.user_id).first()
+
+    embedding_json = json.dumps(result["embedding"])
+
+    if face_data:
+        # 更新
+        face_data.face_encoding = embedding_json
+        face_data.updated_at = datetime.utcnow()
+        print(f"   ✓ 顔データを更新しました")
+    else:
+        # 新規作成
+        face_data = models.FaceData(
+            user_id=req.user_id,
+            face_encoding=embedding_json,
+            is_active=1
+        )
+        db.add(face_data)
+        print(f"   ✓ 顔データを登録しました")
+
+    db.commit()
+
+    print(f"   ユーザー: {user.name}")
+    print(f"   特徴量次元: {len(result['embedding'])}")
+
+    return {
+        "status": "success",
+        "message": "顔の登録に成功しました",
+        "user_id": req.user_id,
+        "user_name": user.name,
+        "embedding_dim": len(result["embedding"])
+    }
+
+@app.post("/face/verify")
+def verify_face(req: schemas.FaceVerifyRequest, db: Session = Depends(get_db)):
+    """
+    顔認証を行う
+    """
+    print(f"\n👤 [顔認証] 認証リクエスト")
+
+    # すべてのアクティブな顔データを取得
+    face_data_list = db.query(models.FaceData).filter(models.FaceData.is_active == 1).all()
+
+    if not face_data_list:
+        return {
+            "status": "error",
+            "message": "登録されている顔データがありません"
+        }
+
+    print(f"   登録顔データ数: {len(face_data_list)}")
+
+    # 各顔データと比較
+    best_match = None
+    best_distance = float('inf')
+
+    for face_data in face_data_list:
+        stored_embedding = json.loads(face_data.face_encoding)
+
+        # 顔認証
+        verify_result = face_rec.verify_faces(
+            req.face_image_base64,
+            stored_embedding,
+            threshold=0.6  # Facenetの推奨閾値（調整可能）
+        )
+
+        print(f"   ユーザーID {face_data.user_id}: 距離={verify_result['distance']:.4f}, 類似度={verify_result.get('similarity', 0):.2f}%")
+
+        if verify_result["verified"] and verify_result["distance"] < best_distance:
+            best_distance = verify_result["distance"]
+            best_match = {
+                "user_id": face_data.user_id,
+                "distance": verify_result["distance"],
+                "similarity": verify_result.get("similarity", 0),
+                "threshold": verify_result["threshold"]
+            }
+
+    if best_match:
+        # 認証成功
+        user = db.query(models.User).filter(models.User.id == best_match["user_id"]).first()
+
+        print(f"   ✓ 認証成功: {user.name} (距離: {best_match['distance']:.4f})")
+
+        return {
+            "status": "success",
+            "verified": True,
+            "user_id": best_match["user_id"],
+            "user_name": user.name,
+            "balance": float(user.balance),
+            "distance": best_match["distance"],
+            "similarity": best_match["similarity"],
+            "threshold": best_match["threshold"]
+        }
+    else:
+        # 認証失敗
+        print(f"   ✗ 認証失敗: 一致する顔が見つかりませんでした")
+
+        return {
+            "status": "error",
+            "verified": False,
+            "message": "顔認証に失敗しました"
+        }
+
+# 顔認証 - ファイルアップロード版（テスト用）
+@app.post("/face/register/upload")
+async def register_face_upload(
+    user_id: int,
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db)
+):
+    """
+    画像ファイルをアップロードして顔を登録（テスト用）
+
+    Args:
+        user_id: ユーザーID
+        file: 顔画像ファイル（JPEG/PNG）
+
+    Returns:
+        登録結果
+    """
+    print(f"\n📤 顔登録（ファイルアップロード）")
+    print(f"   ユーザーID: {user_id}")
+    print(f"   ファイル名: {file.filename}")
+    print(f"   Content-Type: {file.content_type}")
+
+    # ユーザーが存在するか確認
+    user = db.query(models.User).filter(models.User.id == user_id).first()
+    if not user:
+        return {
+            "status": "error",
+            "message": f"ユーザーID {user_id} が見つかりません"
+        }
+
+    try:
+        # ファイルを読み込んでBase64エンコード
+        contents = await file.read()
+
+        print(f"   画像サイズ: {len(contents)} bytes")
+        print(f"   最初の20バイト: {contents[:20]}")
+
+        # 画像ファイルかどうか簡易チェック
+        if len(contents) == 0:
+            return {
+                "status": "error",
+                "message": "アップロードされたファイルが空です"
+            }
+
+        # 一般的な画像ファイルのマジックナンバーチェック
+        is_jpeg = contents[:2] == b'\xff\xd8'
+        is_png = contents[:8] == b'\x89PNG\r\n\x1a\n'
+
+        if not (is_jpeg or is_png):
+            print(f"   ⚠️ 警告: 画像ファイルではない可能性があります")
+            print(f"   ファイルヘッダー: {contents[:10].hex()}")
+
+        base64_image = base64.b64encode(contents).decode()
+        print(f"   Base64文字列長: {len(base64_image)}")
+
+        # 既存の登録ロジックを呼び出し
+        result = face_rec.register_face(user_id, base64_image)
+
+        if not result["success"]:
+            return {
+                "status": "error",
+                "message": result["message"]
+            }
+
+        # データベースに保存
+        face_data = db.query(models.FaceData).filter(
+            models.FaceData.user_id == user_id
+        ).first()
+
+        embedding_json = json.dumps(result["embedding"])
+
+        if face_data:
+            print(f"   既存の顔データを更新")
+            face_data.face_encoding = embedding_json
+            face_data.updated_at = datetime.utcnow()
+            face_data.is_active = 1
+        else:
+            print(f"   新規顔データを登録")
+            face_data = models.FaceData(
+                user_id=user_id,
+                face_encoding=embedding_json,
+                is_active=1
+            )
+            db.add(face_data)
+
+        db.commit()
+
+        print(f"   ✓ 顔登録成功")
+
+        return {
+            "status": "success",
+            "message": "顔の登録に成功しました",
+            "user_id": user_id,
+            "user_name": user.name,
+            "embedding_dim": len(result["embedding"])
+        }
+
+    except Exception as e:
+        print(f"   ✗ エラー: {str(e)}")
+        return {
+            "status": "error",
+            "message": f"顔の登録に失敗: {str(e)}"
+        }
+
+@app.post("/face/verify/upload")
+async def verify_face_upload(
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db)
+):
+    """
+    画像ファイルをアップロードして顔認証（テスト用）
+
+    Args:
+        file: 顔画像ファイル（JPEG/PNG）
+
+    Returns:
+        認証結果とユーザー情報
+    """
+    print(f"\n🔍 顔認証（ファイルアップロード）")
+    print(f"   ファイル名: {file.filename}")
+    print(f"   Content-Type: {file.content_type}")
+
+    try:
+        # ファイルを読み込んでBase64エンコード
+        contents = await file.read()
+        base64_image = base64.b64encode(contents).decode()
+
+        print(f"   画像サイズ: {len(contents)} bytes")
+
+        # データベースから全ての有効な顔データを取得
+        face_data_list = db.query(models.FaceData).filter(
+            models.FaceData.is_active == 1
+        ).all()
+
+        if not face_data_list:
+            print(f"   ✗ 登録された顔データがありません")
+            return {
+                "status": "error",
+                "verified": False,
+                "message": "登録された顔データがありません"
+            }
+
+        print(f"   登録ユーザー数: {len(face_data_list)}")
+
+        # 各ユーザーの顔と比較
+        best_match = None
+        best_distance = float('inf')
+
+        for face_data in face_data_list:
+            stored_embedding = json.loads(face_data.face_encoding)
+
+            # 顔認証を実行
+            verify_result = face_rec.verify_faces(
+                base64_image,
+                stored_embedding,
+                threshold=0.6  # Facenetの推奨閾値
+            )
+
+            print(f"   ユーザーID {face_data.user_id}: 距離={verify_result['distance']:.4f}, 認証={'成功' if verify_result['verified'] else '失敗'}")
+
+            # 認証成功かつ最も距離が近い場合
+            if verify_result["verified"] and verify_result["distance"] < best_distance:
+                best_distance = verify_result["distance"]
+                best_match = {
+                    "user_id": face_data.user_id,
+                    "distance": verify_result["distance"],
+                    "similarity": verify_result["similarity"],
+                    "threshold": verify_result["threshold"]
+                }
+
+        # 最も一致したユーザーがいる場合
+        if best_match:
+            user = db.query(models.User).filter(
+                models.User.id == best_match["user_id"]
+            ).first()
+
+            print(f"   ✓ 認証成功: {user.name} (ID: {user.id})")
+
+            return {
+                "status": "success",
+                "verified": True,
+                "user_id": best_match["user_id"],
+                "user_name": user.name,
+                "balance": float(user.balance),
+                "distance": best_match["distance"],
+                "similarity": best_match["similarity"],
+                "threshold": best_match["threshold"]
+            }
+
+        print(f"   ✗ 認証失敗: 一致する顔が見つかりませんでした")
+
+        return {
+            "status": "error",
+            "verified": False,
+            "message": "顔認証に失敗しました"
+        }
+
+    except Exception as e:
+        print(f"   ✗ エラー: {str(e)}")
+        return {
+            "status": "error",
+            "verified": False,
+            "message": f"顔認証に失敗: {str(e)}"
+        }
 
 # Cards管理エンドポイント
 @app.get("/cards")

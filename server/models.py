@@ -93,3 +93,12 @@ class Purchase(Base):
     device_id = Column(String, nullable=True)
     purchased_at = Column(DateTime, default=datetime.utcnow)
     timestamp = Column(DateTime, default=datetime.utcnow)
+
+class FaceData(Base):
+    __tablename__ = "face_data"
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, unique=True)
+    face_encoding = Column(String, nullable=False)  # JSON形式で保存された顔エンコーディング
+    registered_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    is_active = Column(Integer, default=1)  # 1=有効、0=無効

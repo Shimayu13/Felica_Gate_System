@@ -63,3 +63,14 @@ class PurchaseRequest(BaseModel):
     store_code: Optional[str] = None  # 店舗コード
     device_id: str
     timestamp: datetime
+
+class FaceRegisterRequest(BaseModel):
+    user_id: int
+    face_image_base64: str  # Base64エンコードされた顔画像
+
+class FaceVerifyRequest(BaseModel):
+    face_image_base64: str  # Base64エンコードされた顔画像
+    station_code: Optional[str] = None  # 改札で使用する場合
+    gate_code: Optional[str] = None
+    device_id: Optional[str] = None
+    timestamp: Optional[datetime] = None
