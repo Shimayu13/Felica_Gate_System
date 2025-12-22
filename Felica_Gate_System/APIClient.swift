@@ -10,6 +10,7 @@ struct ScanRequest: Codable {
     let scan_source: String
     let card_idm: String?
     let qr_token: String?
+    let face_image_base64: String?  // 顔認証用
     let station_code: String
     let gate_code: String
     let timestamp: String
@@ -184,6 +185,74 @@ class APIClient {
 
             if let responseString = String(data: data, encoding: .utf8) {
                 print("📥 顔認証レスポンス: \(responseString)")
+            }
+
+            completion(.success(data))
+        }
+
+        task.resume()
+    }
+
+    func postScanWithFace(faceImage: UIImage, stationCode: String, gateCode: String, completion: @escaping (Result<Data, Error>) -> Void) {
+        let url = baseURL.appendingPathComponent("scan")
+
+        var urlRequest = URLRequest(url: url)
+        urlRequest.httpMethod = "POST"
+        urlRequest.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        urlRequest.timeoutInterval = 60.0  // 顔検出に時間がかかる可能性があるため
+
+        // 画像をBase64エンコード
+        guard let imageData = faceImage.jpegData(compressionQuality: 0.6),
+              let base64String = String(data: imageData.base64EncodedData(), encoding: .utf8) else {
+            completion(.failure(NSError(domain: "APIClient", code: -1, userInfo: [NSLocalizedDescriptionKey: "Failed to encode image"])))
+            return
+        }
+
+        print("📤 顔認証スキャン: imageSize=\(imageData.count) bytes")
+
+        let request = ScanRequest(
+            scan_source: "face",
+            card_idm: nil,
+            qr_token: nil,
+            face_image_base64: base64String,
+            station_code: stationCode,
+            gate_code: gateCode,
+            timestamp: ISO8601DateFormatter().string(from: Date()),
+            device_id: UIDevice.current.identifierForVendor?.uuidString ?? "unknown"
+        )
+
+        do {
+            urlRequest.httpBody = try JSONEncoder().encode(request)
+        } catch {
+            completion(.failure(error))
+            return
+        }
+
+        // URLSession の設定をカスタマイズ
+        let config = URLSessionConfiguration.default
+        config.timeoutIntervalForRequest = 60.0
+        config.timeoutIntervalForResource = 120.0
+        let session = URLSession(configuration: config)
+
+        let task = session.dataTask(with: urlRequest) { data, response, error in
+            if let error = error {
+                print("📥 顔認証スキャンエラー: \(error.localizedDescription)")
+                completion(.failure(error))
+                return
+            }
+
+            if let httpResponse = response as? HTTPURLResponse {
+                print("📥 顔認証スキャンレスポンス Status: \(httpResponse.statusCode)")
+            }
+
+            guard let data = data else {
+                print("📥 データなし")
+                completion(.failure(NSError(domain: "APIClient", code: -1, userInfo: [NSLocalizedDescriptionKey: "No data received"])))
+                return
+            }
+
+            if let responseString = String(data: data, encoding: .utf8) {
+                print("📥 顔認証スキャンレスポンス: \(responseString)")
             }
 
             completion(.success(data))

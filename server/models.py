@@ -51,7 +51,7 @@ class Trip(Base):
     __tablename__ = "trips"
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=True)
-    card_id = Column(Integer, ForeignKey("cards.id"), nullable=False)
+    card_id = Column(Integer, ForeignKey("cards.id"), nullable=True)  # 顔認証の場合はNULL
     station_in = Column(String, nullable=True)
     gate_in = Column(String, nullable=True)
     station_out = Column(String, nullable=True)

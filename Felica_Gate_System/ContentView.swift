@@ -320,6 +320,7 @@ struct GateView: View {
             scan_source: "qr",
             card_idm: nil,
             qr_token: qrToken,
+            face_image_base64: nil,
             station_code: stationCode,
             gate_code: gateCode,
             timestamp: ISO8601DateFormatter().string(from: Date()),
@@ -348,13 +349,13 @@ struct GateView: View {
         scanResult = nil
         cancelScheduledClear()
 
-        apiClient.postFaceVerify(faceImage: faceImage) { result in
+        apiClient.postScanWithFace(faceImage: faceImage, stationCode: stationCode, gateCode: gateCode) { result in
             DispatchQueue.main.async {
                 isProcessing = false
 
                 switch result {
                 case .success(let data):
-                    handleFaceVerifyResponse(data)
+                    handleScanResponse(data, qrToken: nil)
                 case .failure(let error):
                     resultMessage = "ネットワークエラー:\n\(error.localizedDescription)"
                     scanResult = nil
@@ -365,47 +366,7 @@ struct GateView: View {
         }
     }
 
-    private func handleFaceVerifyResponse(_ data: Data) {
-        do {
-            let json = try JSONSerialization.jsonObject(with: data) as? [String: Any]
-
-            if let status = json?["status"] as? String, status == "success",
-               let verified = json?["verified"] as? Bool, verified == true {
-                // 顔認証成功
-                let userId = json?["user_id"] as? Int
-                let userName = json?["user_name"] as? String
-                let balance = json?["balance"] as? Double
-
-                GateSound.playSuccess()
-
-                // 入場処理（顔認証では常に入場）
-                scanResult = ScanResult(
-                    mode: "entry",
-                    userName: userName,
-                    balance: balance,
-                    stationCode: stationCode,
-                    gateCode: gateCode,
-                    usageAmount: nil
-                )
-
-                scheduleClearDisplay()
-            } else {
-                // 顔認証失敗
-                let message = json?["message"] as? String ?? "顔認証に失敗しました"
-                resultMessage = "エラー:\n\(message)"
-                scanResult = nil
-                GateSound.playError()
-                scheduleClearDisplay()
-            }
-        } catch {
-            resultMessage = "応答の解析に失敗しました"
-            scanResult = nil
-            GateSound.playError()
-            scheduleClearDisplay()
-        }
-    }
-
-    private func handleScanResponse(_ data: Data, qrToken: String) {
+    private func handleScanResponse(_ data: Data, qrToken: String?) {
         do {
             let json = try JSONSerialization.jsonObject(with: data) as? [String: Any]
 
@@ -416,14 +377,30 @@ struct GateView: View {
 
                 GateSound.playSuccess()
 
-                // 成功 - ユーザー情報を取得
-                fetchUserInfo(
-                    qrToken: qrToken,
-                    mode: mode,
-                    usageAmount: usageAmount,
-                    balanceOverride: balanceAfterScan,
-                    userIdHint: userId
-                )
+                // QRトークンがある場合は従来のフローでユーザー情報を取得
+                // 顔認証の場合（qrToken == nil）は直接ユーザー情報を取得
+                if let qrToken = qrToken {
+                    // QRスキャンの場合
+                    fetchUserInfo(
+                        qrToken: qrToken,
+                        mode: mode,
+                        usageAmount: usageAmount,
+                        balanceOverride: balanceAfterScan,
+                        userIdHint: userId
+                    )
+                } else if let userId = userId {
+                    // 顔認証の場合 - user_idから直接取得
+                    fetchUserDetails(
+                        userId: userId,
+                        mode: mode,
+                        usageAmount: usageAmount,
+                        balanceOverride: balanceAfterScan
+                    )
+                } else {
+                    resultMessage = "ユーザー情報の取得に失敗しました"
+                    scanResult = nil
+                    scheduleClearDisplay()
+                }
             } else if let status = json?["status"] as? String, status == "error" {
                 let message = json?["message"] as? String ?? "不明なエラー"
 

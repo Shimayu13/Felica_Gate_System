@@ -755,34 +755,101 @@ def calculate_fare_with_pass(user_id: int, station_in: str, station_out: str, db
 
 @app.post("/scan")
 def scan(req: schemas.ScanRequest, db: Session = Depends(get_db)):
-    # find card by idm or qr
+    """
+    統合改札スキャンエンドポイント
+    QR、FeliCa、顔認証のすべてに対応し、混合認証もサポート
+    """
+    print(f"\n🚪 [改札スキャン] scan_source={req.scan_source}, station={req.station_code}, gate={req.gate_code}")
+
+    # 1. ユーザーの特定
+    user = None
     card = None
-    if req.scan_source == "felica" and req.card_idm:
-        card = db.query(models.Card).filter(models.Card.idm == req.card_idm).first()
+
+    if req.scan_source == "face" and req.face_image_base64:
+        # 顔認証
+        print("   認証方法: 顔認証")
+
+        # 顔認証を実行
+        face_data_list = db.query(models.FaceData).filter(
+            models.FaceData.is_active == 1
+        ).all()
+
+        if not face_data_list:
+            return {"status": "error", "message": "no_registered_faces"}
+
+        best_match = None
+        best_distance = float('inf')
+
+        for face_data in face_data_list:
+            stored_embedding = json.loads(face_data.face_encoding)
+            verify_result = face_rec.verify_faces(
+                req.face_image_base64,
+                stored_embedding,
+                threshold=10.0
+            )
+
+            if verify_result["verified"] and verify_result["distance"] < best_distance:
+                best_distance = verify_result["distance"]
+                best_match = {
+                    "user_id": face_data.user_id,
+                    "distance": verify_result["distance"]
+                }
+
+        if not best_match:
+            print("   ✗ 顔認証失敗")
+            return {"status": "error", "message": "face_not_recognized"}
+
+        user = db.query(models.User).filter(models.User.id == best_match["user_id"]).first()
+        print(f"   ✓ 顔認証成功: {user.name} (ID: {user.id}, 距離: {best_match['distance']:.4f})")
+
     elif req.scan_source == "qr" and req.qr_token:
+        # QRコード認証
+        print(f"   認証方法: QRコード (token={req.qr_token[:8]}...)")
         card = db.query(models.Card).filter(models.Card.qr_token == req.qr_token).first()
+        if not card:
+            return {"status": "error", "message": "card_not_registered"}
+        if not card.user:
+            return {"status": "error", "message": "user_not_found_for_card"}
+        user = card.user
+        print(f"   ✓ QR認証成功: {user.name} (ID: {user.id})")
+
+    elif req.scan_source == "felica" and req.card_idm:
+        # FeliCa認証
+        print(f"   認証方法: FeliCa (IDm={req.card_idm[:8]}...)")
+        card = db.query(models.Card).filter(models.Card.idm == req.card_idm).first()
+        if not card:
+            return {"status": "error", "message": "card_not_registered"}
+        if not card.user:
+            return {"status": "error", "message": "user_not_found_for_card"}
+        user = card.user
+        print(f"   ✓ FeliCa認証成功: {user.name} (ID: {user.id})")
+
     else:
-        raise HTTPException(status_code=400, detail="Missing card identifier for given scan_source")
+        raise HTTPException(status_code=400, detail="Missing authentication data for given scan_source")
 
-    if not card:
-        return {"status": "error", "message": "card_not_registered"}
+    if not user:
+        return {"status": "error", "message": "user_not_found"}
 
-    if not card.user:
-        return {"status": "error", "message": "user_not_found_for_card"}
-
-    # check in-progress trip
-    in_trip = db.query(models.Trip).filter(models.Trip.card_id == card.id, models.Trip.status == models.TripStatus.in_progress).order_by(models.Trip.entered_at.desc()).first()
+    # 2. 進行中の旅行を検索（ユーザーIDで検索 - 認証方法が変わってもOK）
+    in_trip = db.query(models.Trip).filter(
+        models.Trip.user_id == user.id,
+        models.Trip.status == models.TripStatus.in_progress
+    ).order_by(models.Trip.entered_at.desc()).first()
 
     if in_trip:
-        # complete trip
+        # 出場処理
+        print(f"   モード: 出場 (trip_id={in_trip.id})")
+        print(f"   入場時: {in_trip.station_in} ({in_trip.gate_in})")
+
         # 定期券を考慮した運賃計算
-        fare_result = calculate_fare_with_pass(card.user_id, in_trip.station_in, req.station_code, db)
+        fare_result = calculate_fare_with_pass(user.id, in_trip.station_in, req.station_code, db)
 
         fare = fare_result["fare"]
-        current_balance = Decimal(card.user.balance or 0)
+        current_balance = Decimal(user.balance or 0)
 
         # 残高不足チェック
         if current_balance < fare:
+            print(f"   ✗ 残高不足: 運賃¥{fare}, 残高¥{current_balance}")
             return {
                 "status": "error",
                 "message": "insufficient_balance",
@@ -790,7 +857,7 @@ def scan(req: schemas.ScanRequest, db: Session = Depends(get_db)):
                 "current_balance": float(current_balance)
             }
 
-        # 出場処理
+        # 出場情報を更新
         in_trip.station_out = req.station_code
         in_trip.gate_out = req.gate_code
         in_trip.exited_at = req.timestamp or datetime.utcnow()
@@ -802,16 +869,18 @@ def scan(req: schemas.ScanRequest, db: Session = Depends(get_db)):
         in_trip.balance_after = current_balance - fare
 
         # 残高減算
-        card.user.balance = current_balance - fare
+        user.balance = current_balance - fare
 
         db.add(in_trip)
-        db.add(card.user)
+        db.add(user)
         db.commit()
+
+        print(f"   ✓ 出場完了: 運賃¥{fare}, 残高¥{user.balance}")
 
         response = {
             "mode": "exit",
-            "user_id": card.user_id,
-            "balance": float(card.user.balance),
+            "user_id": user.id,
+            "balance": float(user.balance),
             "usage_amount": float(fare),
             "used_pass": fare_result["used_pass"]
         }
@@ -824,11 +893,14 @@ def scan(req: schemas.ScanRequest, db: Session = Depends(get_db)):
                 response["charged_section"] = fare_result["charged_section"]
 
         return response
+
     else:
-        # create entry
+        # 入場処理
+        print(f"   モード: 入場")
+
         new_trip = models.Trip(
-            user_id=card.user_id,
-            card_id=card.id,
+            user_id=user.id,
+            card_id=card.id if card else None,  # 顔認証の場合はNULL
             station_in=req.station_code,
             gate_in=req.gate_code,
             entered_at=req.timestamp or datetime.utcnow(),
@@ -838,10 +910,13 @@ def scan(req: schemas.ScanRequest, db: Session = Depends(get_db)):
         )
         db.add(new_trip)
         db.commit()
+
+        print(f"   ✓ 入場完了 (trip_id={new_trip.id})")
+
         return {
             "mode": "entry",
-            "user_id": card.user_id,
-            "balance": float(card.user.balance)
+            "user_id": user.id,
+            "balance": float(user.balance)
         }
 
 @app.post("/retail/purchase")
