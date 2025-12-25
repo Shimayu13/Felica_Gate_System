@@ -151,8 +151,9 @@ class NFCFeliCaReader: NSObject, NFCTagReaderSessionDelegate {
             // 残高情報取得成功
             if let blockData = blocks.first, blockData.count >= 12 {
                 // バイト10-11が残高（リトルエンディアン）
-                let balanceBytes = blockData[10...11]
-                let balance = UInt16(balanceBytes[0]) | (UInt16(balanceBytes[1]) << 8)
+                let byte0 = blockData[10]
+                let byte1 = blockData[11]
+                let balance = UInt16(byte0) | (UInt16(byte1) << 8)
                 print("💰 残高: ¥\(balance)")
             }
 

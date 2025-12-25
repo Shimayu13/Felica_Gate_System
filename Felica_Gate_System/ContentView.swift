@@ -51,8 +51,12 @@ struct GateView: View {
     @AppStorage("gate_code") private var gateCode = "GATE_1"
     @AppStorage("server_url") private var serverURL = "http://Shimayus-MacBook-Pro.local:8000"
 
-    private var apiClient: APIClient {
-        APIClient(baseURL: URL(string: serverURL)!)
+    private var apiClient: APIClient? {
+        guard let url = URL(string: serverURL) else {
+            print("❌ Invalid server URL: \(serverURL)")
+            return nil
+        }
+        return APIClient(baseURL: url)
     }
 
     // FeliCa読み取り（CoreNFC直接実装）
@@ -361,6 +365,15 @@ struct GateView: View {
         scanResult = nil
         cancelScheduledClear()
 
+        guard let client = apiClient else {
+            print("❌ APIクライアントの初期化に失敗")
+            self.isProcessing = false
+            self.resultMessage = "サーバー設定エラー:\n無効なサーバーURL"
+            self.scanResult = nil
+            self.scheduleClearDisplay()
+            return
+        }
+
         let request = ScanRequest(
             scan_source: "qr",
             card_idm: nil,
@@ -372,17 +385,17 @@ struct GateView: View {
             device_id: UIDevice.current.identifierForVendor?.uuidString ?? "unknown"
         )
 
-        apiClient.postScan(request: request) { result in
+        client.postScan(request: request) { result in
             DispatchQueue.main.async {
-                isProcessing = false
+                self.isProcessing = false
 
                 switch result {
                 case .success(let data):
-                    handleScanResponse(data, qrToken: qrToken)
+                    self.handleScanResponse(data, qrToken: qrToken)
                 case .failure(let error):
-                    resultMessage = "ネットワークエラー:\n\(error.localizedDescription)"
-                    scanResult = nil
-                    scheduleClearDisplay()
+                    self.resultMessage = "ネットワークエラー:\n\(error.localizedDescription)"
+                    self.scanResult = nil
+                    self.scheduleClearDisplay()
                 }
             }
         }
@@ -394,18 +407,28 @@ struct GateView: View {
         scanResult = nil
         cancelScheduledClear()
 
-        apiClient.postScanWithFace(faceImage: faceImage, stationCode: stationCode, gateCode: gateCode) { result in
+        guard let client = apiClient else {
+            print("❌ APIクライアントの初期化に失敗")
+            self.isProcessing = false
+            self.resultMessage = "サーバー設定エラー:\n無効なサーバーURL"
+            self.scanResult = nil
+            GateSound.playError()
+            self.scheduleClearDisplay()
+            return
+        }
+
+        client.postScanWithFace(faceImage: faceImage, stationCode: stationCode, gateCode: gateCode) { result in
             DispatchQueue.main.async {
-                isProcessing = false
+                self.isProcessing = false
 
                 switch result {
                 case .success(let data):
-                    handleScanResponse(data, qrToken: nil)
+                    self.handleScanResponse(data, qrToken: nil)
                 case .failure(let error):
-                    resultMessage = "ネットワークエラー:\n\(error.localizedDescription)"
-                    scanResult = nil
+                    self.resultMessage = "ネットワークエラー:\n\(error.localizedDescription)"
+                    self.scanResult = nil
                     GateSound.playError()
-                    scheduleClearDisplay()
+                    self.scheduleClearDisplay()
                 }
             }
         }
@@ -440,6 +463,18 @@ struct GateView: View {
     }
 
     private func sendFeliCaScan(cardIdm: String) {
+        print("📤 [FeliCaスキャン送信] IDm: \(cardIdm)")
+
+        guard let client = apiClient else {
+            print("❌ APIクライアントの初期化に失敗")
+            self.isProcessing = false
+            self.resultMessage = "サーバー設定エラー:\n無効なサーバーURL"
+            self.scanResult = nil
+            GateSound.playError()
+            self.scheduleClearDisplay()
+            return
+        }
+
         let request = ScanRequest(
             scan_source: "felica",
             card_idm: cardIdm,
@@ -451,18 +486,26 @@ struct GateView: View {
             device_id: UIDevice.current.identifierForVendor?.uuidString ?? "unknown"
         )
 
-        apiClient.postScan(request: request) { result in
+        print("📤 [リクエスト情報]")
+        print("   scan_source: felica")
+        print("   card_idm: \(cardIdm)")
+        print("   station: \(stationCode)")
+        print("   gate: \(gateCode)")
+
+        client.postScan(request: request) { result in
             DispatchQueue.main.async {
-                isProcessing = false
+                self.isProcessing = false
 
                 switch result {
                 case .success(let data):
-                    handleScanResponse(data, qrToken: nil)
+                    print("✅ [サーバーレスポンス受信]")
+                    self.handleScanResponse(data, qrToken: nil)
                 case .failure(let error):
-                    resultMessage = "ネットワークエラー:\n\(error.localizedDescription)"
-                    scanResult = nil
+                    print("❌ [ネットワークエラー] \(error.localizedDescription)")
+                    self.resultMessage = "ネットワークエラー:\n\(error.localizedDescription)"
+                    self.scanResult = nil
                     GateSound.playError()
-                    scheduleClearDisplay()
+                    self.scheduleClearDisplay()
                 }
             }
         }
@@ -541,7 +584,15 @@ struct GateView: View {
             return
         }
 
-        apiClient.getCards { result in
+        guard let client = apiClient else {
+            DispatchQueue.main.async {
+                self.resultMessage = "サーバー設定エラー"
+                self.scheduleClearDisplay()
+            }
+            return
+        }
+
+        client.getCards { result in
             switch result {
             case .success(let data):
                 do {
@@ -576,7 +627,15 @@ struct GateView: View {
     }
 
     private func fetchUserDetails(userId: Int, mode: String, usageAmount: Double? = nil, balanceOverride: Double? = nil) {
-        apiClient.getUser(userId: userId) { result in
+        guard let client = apiClient else {
+            DispatchQueue.main.async {
+                self.resultMessage = "サーバー設定エラー"
+                self.scheduleClearDisplay()
+            }
+            return
+        }
+
+        client.getUser(userId: userId) { result in
             DispatchQueue.main.async {
                 switch result {
                 case .success(let data):
