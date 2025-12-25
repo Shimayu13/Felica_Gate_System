@@ -768,18 +768,23 @@ def scan(req: schemas.ScanRequest, db: Session = Depends(get_db)):
     if req.scan_source == "face" and req.face_image_base64:
         # 顔認証
         print("   認証方法: 顔認証")
+        print(f"   顔画像サイズ: {len(req.face_image_base64)} bytes")
 
         # 顔認証を実行
         face_data_list = db.query(models.FaceData).filter(
             models.FaceData.is_active == 1
         ).all()
 
+        print(f"   登録顔データ数: {len(face_data_list)}")
+
         if not face_data_list:
+            print("   ✗ 登録された顔データがありません")
             return {"status": "error", "message": "no_registered_faces"}
 
         best_match = None
         best_distance = float('inf')
 
+        print("   顔認証処理開始...")
         for face_data in face_data_list:
             stored_embedding = json.loads(face_data.face_encoding)
             verify_result = face_rec.verify_faces(
@@ -787,6 +792,8 @@ def scan(req: schemas.ScanRequest, db: Session = Depends(get_db)):
                 stored_embedding,
                 threshold=10.0
             )
+
+            print(f"     ユーザーID {face_data.user_id}: 距離={verify_result['distance']:.4f}, 認証={'成功' if verify_result['verified'] else '失敗'}")
 
             if verify_result["verified"] and verify_result["distance"] < best_distance:
                 best_distance = verify_result["distance"]
@@ -796,7 +803,7 @@ def scan(req: schemas.ScanRequest, db: Session = Depends(get_db)):
                 }
 
         if not best_match:
-            print("   ✗ 顔認証失敗")
+            print("   ✗ 顔認証失敗: 一致する顔が見つかりませんでした")
             return {"status": "error", "message": "face_not_recognized"}
 
         user = db.query(models.User).filter(models.User.id == best_match["user_id"]).first()
@@ -838,8 +845,11 @@ def scan(req: schemas.ScanRequest, db: Session = Depends(get_db)):
 
     if in_trip:
         # 出場処理
+        entry_auth = "顔認証" if in_trip.card_id is None else f"カード (ID: {in_trip.card_id})"
+        exit_auth = "顔認証" if card is None else f"カード (ID: {card.id})"
         print(f"   モード: 出場 (trip_id={in_trip.id})")
-        print(f"   入場時: {in_trip.station_in} ({in_trip.gate_in})")
+        print(f"   入場時: {in_trip.station_in} ({in_trip.gate_in}) - 認証方法: {entry_auth}")
+        print(f"   出場時: {req.station_code} ({req.gate_code}) - 認証方法: {exit_auth}")
 
         # 定期券を考慮した運賃計算
         fare_result = calculate_fare_with_pass(user.id, in_trip.station_in, req.station_code, db)
@@ -876,6 +886,7 @@ def scan(req: schemas.ScanRequest, db: Session = Depends(get_db)):
         db.commit()
 
         print(f"   ✓ 出場完了: 運賃¥{fare}, 残高¥{user.balance}")
+        print(f"   ✓ 認証パターン: {entry_auth} → {exit_auth}")
 
         response = {
             "mode": "exit",
@@ -911,7 +922,8 @@ def scan(req: schemas.ScanRequest, db: Session = Depends(get_db)):
         db.add(new_trip)
         db.commit()
 
-        print(f"   ✓ 入場完了 (trip_id={new_trip.id})")
+        auth_method = "顔認証" if card is None else f"カード (ID: {card.id})"
+        print(f"   ✓ 入場完了 (trip_id={new_trip.id}, 認証方法: {auth_method}, card_id: {new_trip.card_id})")
 
         return {
             "mode": "entry",

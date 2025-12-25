@@ -1,10 +1,12 @@
 """
 シードデータを投入するスクリプト
-テスト用のユーザー、カード、駅、ゲートを作成します
+テスト用のユーザー、カード、駅、ゲート、運賃表を作成します
 """
 from database import SessionLocal, engine, Base
 import models
 from decimal import Decimal
+import pandas as pd
+from sqlalchemy import text
 
 def seed_database():
     db = SessionLocal()
@@ -13,8 +15,32 @@ def seed_database():
         # テーブルを作成
         Base.metadata.create_all(bind=engine)
 
+        # 運賃表とルート情報のテーブルを作成
+        print("🔧 運賃表・ルート情報テーブルを作成中...")
+        db.execute(text("""
+            CREATE TABLE IF NOT EXISTS fare_table (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                min_distance_km INTEGER NOT NULL,
+                fare INTEGER NOT NULL
+            )
+        """))
+
+        db.execute(text("""
+            CREATE TABLE IF NOT EXISTS station_routes (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                station_id INTEGER NOT NULL,
+                line TEXT NOT NULL,
+                sub_line TEXT,
+                distance_from_origin REAL NOT NULL,
+                FOREIGN KEY (station_id) REFERENCES stations(id)
+            )
+        """))
+        db.commit()
+
         # 既存データをクリア（強制再作成）
         print("🗑️  既存データをクリア中...")
+        db.execute(text("DELETE FROM fare_table"))
+        db.execute(text("DELETE FROM station_routes"))
         db.query(models.Gate).delete()
         db.query(models.Station).delete()
         db.query(models.Card).delete()
@@ -43,31 +69,76 @@ def seed_database():
         db.commit()
         print(f"✓ {len(cards)}枚のカードを作成しました")
 
-        # 駅の作成
-        stations = [
-            models.Station(id=1, code="STATION_1", name="新宿駅"),
-            models.Station(id=2, code="STATION_2", name="渋谷駅"),
-            models.Station(id=3, code="STATION_3", name="池袋駅"),
-            models.Station(id=4, code="STATION_4", name="東京駅"),
-        ]
+        # 運賃体系CSVからデータを読み込む
+        print("📊 運賃体系データを読み込み中...")
+        fare_df = pd.read_csv('運賃体系.csv', encoding='shift-jis')
+        fare_count = 0
+        for _, row in fare_df.iterrows():
+            min_dist = row['最低距離']
+            fare = row['運賃']
+            if pd.notna(min_dist) and pd.notna(fare):
+                db.execute(text("INSERT INTO fare_table (min_distance_km, fare) VALUES (:min_dist, :fare)"),
+                          {"min_dist": int(min_dist), "fare": int(fare)})
+                fare_count += 1
+        db.commit()
+        print(f"✓ {fare_count}件の運賃データを作成しました")
+
+        # 営業距離データCSVから駅とルート情報を読み込む
+        print("🚉 駅・ルートデータを読み込み中...")
+        station_df = pd.read_csv('営業距離データ.csv', encoding='shift-jis')
+
+        # 駅データを作成（重複を除く）
+        unique_stations = station_df[['ID', '駅名']].drop_duplicates(subset=['ID'])
+        stations = []
+        for _, row in unique_stations.iterrows():
+            station_id = int(row['ID'])
+            station_name = row['駅名']
+            station_code = f"STATION_{station_id}"
+            stations.append(models.Station(id=station_id, code=station_code, name=station_name))
+
         db.add_all(stations)
         db.commit()
         print(f"✓ {len(stations)}駅を作成しました")
 
-        # ゲートの作成
-        gates = [
-            models.Gate(id=1, code="STATION_1_IN", station_id=1, name="新宿駅 入口1"),
-            models.Gate(id=2, code="STATION_1_OUT", station_id=1, name="新宿駅 出口1"),
-            models.Gate(id=3, code="STATION_2_IN", station_id=2, name="渋谷駅 入口1"),
-            models.Gate(id=4, code="STATION_2_OUT", station_id=2, name="渋谷駅 出口1"),
-            models.Gate(id=5, code="STATION_3_IN", station_id=3, name="池袋駅 入口1"),
-            models.Gate(id=6, code="STATION_3_OUT", station_id=3, name="池袋駅 出口1"),
-            models.Gate(id=7, code="STATION_4_IN", station_id=4, name="東京駅 入口1"),
-            models.Gate(id=8, code="STATION_4_OUT", station_id=4, name="東京駅 出口1"),
-        ]
+        # ルート情報を作成
+        route_count = 0
+        for _, row in station_df.iterrows():
+            station_id = int(row['ID'])
+            line = row['路線']
+            sub_line = row['支線'] if pd.notna(row['支線']) else None
+            distance_from_origin = float(row['起点駅からの営業キロ'])
+
+            db.execute(text("""
+                INSERT INTO station_routes (station_id, line, sub_line, distance_from_origin)
+                VALUES (:station_id, :line, :sub_line, :distance_from_origin)
+            """), {
+                "station_id": station_id,
+                "line": line,
+                "sub_line": sub_line,
+                "distance_from_origin": distance_from_origin
+            })
+            route_count += 1
+
+        db.commit()
+        print(f"✓ {route_count}件のルート情報を作成しました")
+
+        # 全駅に改札を作成
+        print("🚪 全駅に改札を作成中...")
+        gates = []
+        gate_id = 1
+        for station in stations:
+            # 各駅に1つの改札を設定
+            gates.append(models.Gate(
+                id=gate_id,
+                code=f"GATE_{station.id}",
+                station_id=station.id,
+                name=f"{station.name} 改札"
+            ))
+            gate_id += 1
+
         db.add_all(gates)
         db.commit()
-        print(f"✓ {len(gates)}個のゲートを作成しました")
+        print(f"✓ {len(gates)}個のゲートを作成しました（全{len(stations)}駅）")
 
         print("\n✅ シードデータの投入が完了しました！")
         print("\n" + "=" * 60)
@@ -80,6 +151,19 @@ def seed_database():
         print("\n💳 カード:")
         for card in cards:
             print(f"   ID={card.id}, ユーザーID={card.user_id}, QRトークン={card.qr_token}")
+
+        print(f"\n🚉 駅: {len(stations)}駅")
+        print(f"🚪 改札: {len(gates)}個（全駅対応）")
+        print(f"📊 運賃データ: {fare_count}件")
+        print(f"🛤️  ルート情報: {route_count}件")
+
+        # 主要駅を表示
+        print("\n🚉 主要駅の例:")
+        major_station_ids = [1, 7, 11, 15, 22]  # 東京、品川、川崎、横浜、武蔵小杉
+        for station_id in major_station_ids:
+            station = db.query(models.Station).filter(models.Station.id == station_id).first()
+            if station:
+                print(f"   {station.name} (GATE_{station.id})")
 
         print("\n" + "=" * 60)
         print("🔔 次のステップ:")

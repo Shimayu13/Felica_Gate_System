@@ -44,19 +44,27 @@ struct GateView: View {
     @State private var scanResult: ScanResult?
     @State private var isProcessing = false
     @State private var clearDisplayToken = UUID()
-    @State private var scanMode: ScanMode = .qr  // QR または 顔認証
+    @State private var scanMode: ScanMode = .qr  // QR, FeliCa, または 顔認証
     @State private var showFaceCamera = false
 
     @AppStorage("station_code") private var stationCode = "STATION_1"
-    @AppStorage("gate_code") private var gateCode = "STATION_1_IN"
+    @AppStorage("gate_code") private var gateCode = "GATE_1"
     @AppStorage("server_url") private var serverURL = "http://Shimayus-MacBook-Pro.local:8000"
 
     private var apiClient: APIClient {
         APIClient(baseURL: URL(string: serverURL)!)
     }
 
+    // FeliCa読み取り（交通系IC: Suica/PASMO等）
+    // 注意: Apple承認が必要なため、現在は使用不可
+    // private let nfcReader = NFCFeliCaReader()
+
+    // 一般NFCタグ読み取り（申請不要、すぐ使える）
+    private let nfcReader = NFCNDEFReader()
+
     enum ScanMode {
         case qr
+        case felica  // 「FeliCa」という名前ですが、一般NFCタグも読めます
         case face
     }
 
@@ -190,28 +198,41 @@ struct GateView: View {
                             // 初期状態
                             VStack(spacing: 15) {
                                 // モード切替ボタン
-                                HStack(spacing: 20) {
+                                HStack(spacing: 15) {
                                     Button(action: { scanMode = .qr }) {
                                         VStack(spacing: 8) {
                                             Image(systemName: "qrcode.viewfinder")
-                                                .font(.system(size: 40))
+                                                .font(.system(size: 35))
                                             Text("QRコード")
                                                 .font(.caption)
                                         }
-                                        .frame(width: 100, height: 80)
+                                        .frame(width: 90, height: 75)
                                         .background(scanMode == .qr ? Color.blue.opacity(0.2) : Color.gray.opacity(0.1))
                                         .foregroundColor(scanMode == .qr ? .blue : .gray)
+                                        .cornerRadius(12)
+                                    }
+
+                                    Button(action: { scanMode = .felica }) {
+                                        VStack(spacing: 8) {
+                                            Image(systemName: "creditcard.fill")
+                                                .font(.system(size: 35))
+                                            Text("FeliCa")
+                                                .font(.caption)
+                                        }
+                                        .frame(width: 90, height: 75)
+                                        .background(scanMode == .felica ? Color.orange.opacity(0.2) : Color.gray.opacity(0.1))
+                                        .foregroundColor(scanMode == .felica ? .orange : .gray)
                                         .cornerRadius(12)
                                     }
 
                                     Button(action: { scanMode = .face }) {
                                         VStack(spacing: 8) {
                                             Image(systemName: "faceid")
-                                                .font(.system(size: 40))
+                                                .font(.system(size: 35))
                                             Text("顔認証")
                                                 .font(.caption)
                                         }
-                                        .frame(width: 100, height: 80)
+                                        .frame(width: 90, height: 75)
                                         .background(scanMode == .face ? Color.green.opacity(0.2) : Color.gray.opacity(0.1))
                                         .foregroundColor(scanMode == .face ? .green : .gray)
                                         .cornerRadius(12)
@@ -219,11 +240,11 @@ struct GateView: View {
                                 }
                                 .padding(.bottom, 10)
 
-                                Image(systemName: scanMode == .qr ? "qrcode.viewfinder" : "faceid")
+                                Image(systemName: scanMode == .qr ? "qrcode.viewfinder" : (scanMode == .felica ? "creditcard.fill" : "faceid"))
                                     .font(.system(size: 80))
                                     .foregroundColor(.gray)
 
-                                Text(scanMode == .qr ? "QRコードをスキャンしてください" : "顔認証で入退場できます")
+                                Text(scanMode == .qr ? "QRコードをスキャンしてください" : (scanMode == .felica ? "FeliCaカードをタッチしてください" : "顔認証で入退場できます"))
                                     .font(.title3)
                                     .foregroundColor(.secondary)
 
@@ -237,6 +258,19 @@ struct GateView: View {
                                         .foregroundColor(.white)
                                         .padding()
                                         .background(Color.green)
+                                        .cornerRadius(12)
+                                    }
+                                    .padding(.top, 10)
+                                } else if scanMode == .felica {
+                                    Button(action: { startFeliCaScan() }) {
+                                        HStack {
+                                            Image(systemName: "wave.3.right")
+                                            Text("FeliCa読み取り開始")
+                                        }
+                                        .font(.headline)
+                                        .foregroundColor(.white)
+                                        .padding()
+                                        .background(Color.orange)
                                         .cornerRadius(12)
                                     }
                                     .padding(.top, 10)
@@ -254,15 +288,30 @@ struct GateView: View {
 
                 Divider()
 
-                // 下部：QRスキャナー または 顔認証ボタン（1/3の高さ）
+                // 下部：QRスキャナー または FeliCa/顔認証待機画面（1/3の高さ）
                 ZStack {
                     if scanMode == .qr {
                         QRScannerView { token in
                             sendScan(qrToken: token)
                         }
                         .frame(height: geometry.size.height * 1 / 3)
+                    } else if scanMode == .felica {
+                        // FeliCaモードの場合
+                        Color(UIColor.systemBackground)
+                            .frame(height: geometry.size.height * 1 / 3)
+                            .overlay(
+                                VStack(spacing: 15) {
+                                    Image(systemName: "wave.3.right.circle.fill")
+                                        .font(.system(size: 60))
+                                        .foregroundColor(.orange.opacity(0.5))
+
+                                    Text("上のボタンからFeliCa読み取りを開始")
+                                        .font(.subheadline)
+                                        .foregroundColor(.secondary)
+                                }
+                            )
                     } else {
-                        // 顔認証モードの場合は空白
+                        // 顔認証モードの場合
                         Color(UIColor.systemBackground)
                             .frame(height: geometry.size.height * 1 / 3)
                             .overlay(
@@ -350,6 +399,58 @@ struct GateView: View {
         cancelScheduledClear()
 
         apiClient.postScanWithFace(faceImage: faceImage, stationCode: stationCode, gateCode: gateCode) { result in
+            DispatchQueue.main.async {
+                isProcessing = false
+
+                switch result {
+                case .success(let data):
+                    handleScanResponse(data, qrToken: nil)
+                case .failure(let error):
+                    resultMessage = "ネットワークエラー:\n\(error.localizedDescription)"
+                    scanResult = nil
+                    GateSound.playError()
+                    scheduleClearDisplay()
+                }
+            }
+        }
+    }
+
+    private func startFeliCaScan() {
+        isProcessing = true
+        resultMessage = ""
+        scanResult = nil
+        cancelScheduledClear()
+
+        nfcReader.startReading { result in
+            DispatchQueue.main.async {
+                switch result {
+                case .success(let idm):
+                    print("📇 FeliCa IDm読み取り成功: \(idm)")
+                    self.sendFeliCaScan(cardIdm: idm)
+                case .failure(let error):
+                    self.isProcessing = false
+                    self.resultMessage = "FeliCa読み取りエラー:\n\(error.localizedDescription)"
+                    self.scanResult = nil
+                    GateSound.playError()
+                    self.scheduleClearDisplay()
+                }
+            }
+        }
+    }
+
+    private func sendFeliCaScan(cardIdm: String) {
+        let request = ScanRequest(
+            scan_source: "felica",
+            card_idm: cardIdm,
+            qr_token: nil,
+            face_image_base64: nil,
+            station_code: stationCode,
+            gate_code: gateCode,
+            timestamp: ISO8601DateFormatter().string(from: Date()),
+            device_id: UIDevice.current.identifierForVendor?.uuidString ?? "unknown"
+        )
+
+        apiClient.postScan(request: request) { result in
             DispatchQueue.main.async {
                 isProcessing = false
 
