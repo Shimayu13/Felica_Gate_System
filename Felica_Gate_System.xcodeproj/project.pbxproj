@@ -6,6 +6,9 @@
 	objectVersion = 77;
 	objects = {
 
+/* Begin PBXBuildFile section */
+/* End PBXBuildFile section */
+
 /* Begin PBXFileReference section */
 		B68AC45B2EEA445D00BB37A2 /* Felica_Gate_System.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Felica_Gate_System.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
@@ -99,6 +102,8 @@
 			);
 			mainGroup = B68AC4522EEA445D00BB37A2;
 			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = B68AC45C2EEA445D00BB37A2 /* Products */;
 			projectDirPath = "";

@@ -55,12 +55,8 @@ struct GateView: View {
         APIClient(baseURL: URL(string: serverURL)!)
     }
 
-    // FeliCa読み取り（交通系IC: Suica/PASMO等）
-    // 注意: Apple承認が必要なため、現在は使用不可
-    // private let nfcReader = NFCFeliCaReader()
-
-    // 一般NFCタグ読み取り（申請不要、すぐ使える）
-    private let nfcReader = NFCNDEFReader()
+    // FeliCa読み取り（CoreNFC直接実装）
+    private let feliCaReader = NFCFeliCaReader()
 
     enum ScanMode {
         case qr
@@ -421,12 +417,17 @@ struct GateView: View {
         scanResult = nil
         cancelScheduledClear()
 
-        nfcReader.startReading { result in
+        // CoreNFC直接実装でFeliCa読み取り
+        feliCaReader.startReading { result in
             DispatchQueue.main.async {
                 switch result {
                 case .success(let idm):
-                    print("📇 FeliCa IDm読み取り成功: \(idm)")
+                    print("📇 FeliCa読み取り成功")
+                    print("   IDm: \(idm)")
+
+                    // IDmをサーバーに送信
                     self.sendFeliCaScan(cardIdm: idm)
+
                 case .failure(let error):
                     self.isProcessing = false
                     self.resultMessage = "FeliCa読み取りエラー:\n\(error.localizedDescription)"

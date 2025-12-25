@@ -1,0 +1,12 @@
+Xcodeでライブラリを追加する手順:
+
+1. Xcode でプロジェクトを開く
+2. File → Add Package Dependencies...
+3. 検索バーに以下のURLを入力:
+   https://github.com/treastrain/TRETJapanNFCReader
+
+4. "Add Package" をクリック
+5. "Felica_Gate_System" ターゲットを選択してチェック
+6. "Add Package" をクリック
+
+または、Package.swiftに直接追加:
