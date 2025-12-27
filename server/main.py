@@ -810,8 +810,15 @@ def scan(req: schemas.ScanRequest, db: Session = Depends(get_db)):
         print(f"   ✓ 顔認証成功: {user.name} (ID: {user.id}, 距離: {best_match['distance']:.4f})")
 
     elif req.scan_source == "qr" and req.qr_token:
-        # QRコード認証
-        print(f"   認証方法: QRコード (token={req.qr_token[:8]}...)")
+        # QRコード認証（切符またはユーザーカード）
+        print(f"   認証方法: QRコード (token={req.qr_token[:20]}...)")
+
+        # 切符のQRトークンかチェック
+        if req.qr_token.startswith("TICKET_QR_"):
+            print("   切符として処理")
+            return handle_ticket_scan(req, db)
+
+        # 通常のユーザーカードQRトークン
         card = db.query(models.Card).filter(models.Card.qr_token == req.qr_token).first()
         if not card:
             return {"status": "error", "message": "card_not_registered"}
@@ -1709,3 +1716,497 @@ def delete_pass(pass_id: int, db: Session = Depends(get_db)):
     db.delete(pass_obj)
     db.commit()
     return {"status": "ok", "message": "定期券を削除しました"}
+
+
+# ============================================
+# 切符システムAPI
+# ============================================
+
+import secrets
+from pydantic import BaseModel
+
+class TicketIssueRequest(BaseModel):
+    origin_station: str
+    destination_station: str
+    ticket_type: str  # "single", "round_trip", "day_pass"
+    issued_by: str
+    notes: Optional[str] = None
+
+class IssuedTicket(BaseModel):
+    ticket_id: str
+    qr_token: str
+    origin_station: str
+    destination_station: str
+    ticket_type: str
+    price: int
+    valid_until: str
+    created_at: str
+
+def generate_qr_token() -> str:
+    """QRトークンを生成"""
+    random_str = secrets.token_urlsafe(24)
+    return f"TICKET_QR_{random_str}"
+
+def generate_ticket_id() -> str:
+    """切符IDを生成"""
+    timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
+    random_suffix = secrets.token_hex(3)
+    return f"TKT{timestamp}{random_suffix.upper()}"
+
+def calculate_ticket_price(origin: str, destination: str, ticket_type: str, db: Session) -> int:
+    """切符の料金を計算"""
+    # 駅の存在確認
+    origin_station = db.query(models.Station).filter(models.Station.code == origin).first()
+    dest_station = db.query(models.Station).filter(models.Station.code == destination).first()
+
+    if not origin_station or not dest_station:
+        return 200  # デフォルト料金
+
+    # 駅間の距離を計算
+    try:
+        distance_km = calculate_station_distance(origin, destination, db)
+
+        if distance_km is not None and distance_km > 0:
+            base_price = int(get_fare_from_distance(distance_km, db))
+        else:
+            # 距離データがない場合はデフォルト料金
+            base_price = 200
+    except Exception as e:
+        print(f"料金計算エラー: {e}")
+        base_price = 200
+
+    # 切符種類による調整
+    if ticket_type == "round_trip":
+        return base_price * 2
+    elif ticket_type == "day_pass":
+        return 1000  # 一日券は固定料金
+    else:  # single
+        return base_price
+
+@app.post("/admin/ticket/issue")
+def issue_ticket(request: TicketIssueRequest, db: Session = Depends(get_db)):
+    """
+    Web管理画面から切符を発券
+    """
+    print(f"\n🎫 [切符発券] {request.origin_station} → {request.destination_station} ({request.ticket_type})")
+
+    # バリデーション
+    valid_ticket_types = ["single", "round_trip", "day_pass"]
+    if request.ticket_type not in valid_ticket_types:
+        raise HTTPException(status_code=400, detail="Invalid ticket type")
+
+    if request.origin_station == request.destination_station:
+        raise HTTPException(status_code=400, detail="Origin and destination must be different")
+
+    # 切符情報を生成
+    ticket_id = generate_ticket_id()
+    qr_token = generate_qr_token()
+    price = calculate_ticket_price(request.origin_station, request.destination_station, request.ticket_type, db)
+
+    # 有効期限を設定
+    from datetime import timedelta
+    now = datetime.now()
+    if request.ticket_type == "day_pass":
+        # 一日券：当日23:59:59まで
+        valid_until = now.replace(hour=23, minute=59, second=59, microsecond=0)
+    else:
+        # 片道・往復：購入から24時間
+        valid_until = now + timedelta(hours=24)
+
+    # データベースに保存（直接SQL実行）
+    db.execute(
+        text("""
+        INSERT INTO tickets
+        (ticket_id, qr_token, origin_station, destination_station,
+         ticket_type, price, status, valid_until, created_by, notes, created_at)
+        VALUES (:ticket_id, :qr_token, :origin, :dest,
+                :ticket_type, :price, 'active', :valid_until, :created_by, :notes, :created_at)
+        """),
+        {
+            "ticket_id": ticket_id,
+            "qr_token": qr_token,
+            "origin": request.origin_station,
+            "dest": request.destination_station,
+            "ticket_type": request.ticket_type,
+            "price": price,
+            "valid_until": valid_until.isoformat(),
+            "created_by": request.issued_by,
+            "notes": request.notes,
+            "created_at": now.isoformat()
+        }
+    )
+    db.commit()
+
+    print(f"✅ 切符発券完了: {ticket_id} (¥{price})")
+
+    return IssuedTicket(
+        ticket_id=ticket_id,
+        qr_token=qr_token,
+        origin_station=request.origin_station,
+        destination_station=request.destination_station,
+        ticket_type=request.ticket_type,
+        price=price,
+        valid_until=valid_until.isoformat() + "Z",
+        created_at=now.isoformat() + "Z"
+    )
+
+@app.get("/admin/ticket/{ticket_id}")
+def get_ticket(ticket_id: str, db: Session = Depends(get_db)):
+    """
+    切符情報を取得（再印刷用）
+    """
+    ticket = db.execute(
+        text("SELECT * FROM tickets WHERE ticket_id = :ticket_id"),
+        {"ticket_id": ticket_id}
+    ).fetchone()
+
+    if not ticket:
+        raise HTTPException(status_code=404, detail="Ticket not found")
+
+    return {
+        "ticket_id": ticket[1],
+        "qr_token": ticket[2],
+        "origin_station": ticket[3],
+        "destination_station": ticket[4],
+        "ticket_type": ticket[5],
+        "price": ticket[6],
+        "status": ticket[7],
+        "valid_until": ticket[8],
+        "created_at": ticket[9],
+        "used_at": ticket[10],
+        "created_by": ticket[11],
+        "notes": ticket[12]
+    }
+
+@app.get("/admin/tickets")
+def list_tickets(
+    status: Optional[str] = None,
+    limit: int = 50,
+    offset: int = 0,
+    db: Session = Depends(get_db)
+):
+    """
+    切符一覧を取得
+    """
+    query = "SELECT * FROM tickets"
+    params = {}
+
+    if status:
+        query += " WHERE status = :status"
+        params["status"] = status
+
+    query += " ORDER BY created_at DESC LIMIT :limit OFFSET :offset"
+    params["limit"] = limit
+    params["offset"] = offset
+
+    tickets = db.execute(text(query), params).fetchall()
+
+    return {
+        "tickets": [
+            {
+                "id": t[0],
+                "ticket_id": t[1],
+                "qr_token": t[2],
+                "origin_station": t[3],
+                "destination_station": t[4],
+                "ticket_type": t[5],
+                "price": t[6],
+                "status": t[7],
+                "valid_until": t[8],
+                "created_at": t[9],
+                "used_at": t[10],
+                "created_by": t[11],
+                "notes": t[12]
+            }
+            for t in tickets
+        ],
+        "count": len(tickets)
+    }
+
+def handle_ticket_scan(req, db: Session):
+    """
+    切符のスキャン処理（入場・出場）
+    """
+    print(f"\n🎫 [切符スキャン] qr_token={req.qr_token[:30]}...")
+
+    # 1. 切符を取得
+    ticket = db.execute(
+        text("SELECT * FROM tickets WHERE qr_token = :qr_token"),
+        {"qr_token": req.qr_token}
+    ).fetchone()
+
+    if not ticket:
+        print("   ✗ 切符が見つかりません")
+        return {"status": "error", "message": "ticket_not_found"}
+
+    # チケット情報を展開
+    ticket_id = ticket[1]
+    origin_station = ticket[3]
+    destination_station = ticket[4]
+    ticket_type = ticket[5]
+    price = ticket[6]
+    status = ticket[7]
+    valid_until_str = ticket[8]
+
+    print(f"   切符ID: {ticket_id}")
+    print(f"   種類: {ticket_type}, 区間: {origin_station} → {destination_station}")
+    print(f"   ステータス: {status}, 有効期限: {valid_until_str}")
+
+    # 2. ステータスチェック
+    if status == "used":
+        print("   ✗ 既に使用済みの切符です")
+        return {"status": "error", "message": "ticket_already_used"}
+    elif status == "expired":
+        print("   ✗ 有効期限切れの切符です")
+        return {"status": "error", "message": "ticket_expired"}
+    elif status == "cancelled":
+        print("   ✗ キャンセルされた切符です")
+        return {"status": "error", "message": "ticket_cancelled"}
+    elif status != "active":
+        print(f"   ✗ 無効なステータス: {status}")
+        return {"status": "error", "message": "ticket_invalid_status"}
+
+    # 3. 有効期限チェック
+    from datetime import datetime
+    try:
+        valid_until = datetime.fromisoformat(valid_until_str.replace('Z', '+00:00'))
+        now = datetime.now()
+        # タイムゾーンを揃える
+        if valid_until.tzinfo is not None:
+            from datetime import timezone
+            now = now.replace(tzinfo=timezone.utc)
+        else:
+            valid_until = valid_until.replace(tzinfo=None)
+            now = now.replace(tzinfo=None)
+
+        if now > valid_until:
+            print(f"   ✗ 有効期限切れ: {valid_until_str}")
+            # ステータスを期限切れに更新
+            db.execute(
+                text("UPDATE tickets SET status = 'expired' WHERE ticket_id = :ticket_id"),
+                {"ticket_id": ticket_id}
+            )
+            db.commit()
+            return {"status": "error", "message": "ticket_expired"}
+    except Exception as e:
+        print(f"   ⚠ 有効期限の解析エラー: {e}")
+        # エラーが発生しても処理を続行
+
+    # 4. 使用履歴を確認（入場 or 出場）
+    usage_history = db.execute(
+        text("""
+        SELECT action, station_code, timestamp
+        FROM ticket_usage
+        WHERE qr_token = :qr_token
+        ORDER BY timestamp DESC
+        """),
+        {"qr_token": req.qr_token}
+    ).fetchall()
+
+    # 最後のアクションを確認
+    last_action = usage_history[0][0] if usage_history else None
+
+    if last_action == "entry":
+        # 出場処理
+        print(f"   モード: 出場")
+        entry_station = usage_history[0][1]
+        print(f"   入場駅: {entry_station}")
+        print(f"   出場駅: {req.station_code}")
+
+        # 料金範囲チェック：実際の移動料金が切符の料金以下かチェック
+        # 一日券は料金チェック不要
+        if ticket_type != "day_pass":
+            # 入場駅から出場駅までの実際の料金を計算
+            try:
+                actual_distance = calculate_station_distance(entry_station, req.station_code, db)
+
+                if actual_distance is not None and actual_distance > 0:
+                    actual_fare = int(get_fare_from_distance(actual_distance, db))
+
+                    # 往復切符の場合は基本料金で比較（往路分のみ）
+                    if ticket_type == "round_trip":
+                        ticket_base_fare = price // 2
+                    else:
+                        ticket_base_fare = price
+
+                    print(f"   実際の料金: ¥{actual_fare} (距離: {actual_distance}km)")
+                    print(f"   切符の料金: ¥{ticket_base_fare}")
+
+                    if actual_fare > ticket_base_fare:
+                        print(f"   ✗ 料金不足: 実際¥{actual_fare} > 切符¥{ticket_base_fare}")
+                        return {
+                            "status": "error",
+                            "message": "fare_insufficient",
+                            "required_fare": actual_fare,
+                            "ticket_fare": ticket_base_fare,
+                            "shortage": actual_fare - ticket_base_fare
+                        }
+                else:
+                    # 距離データがない場合は警告のみで通過許可
+                    print(f"   ⚠ 駅間距離データなし、通過を許可")
+            except Exception as e:
+                print(f"   ⚠ 料金チェックエラー: {e}、通過を許可")
+
+        # 使用履歴に出場を記録
+        db.execute(
+            text("""
+            INSERT INTO ticket_usage
+            (ticket_id, qr_token, action, station_code, gate_code, timestamp)
+            VALUES (:ticket_id, :qr_token, 'exit', :station, :gate, :timestamp)
+            """),
+            {
+                "ticket_id": ticket_id,
+                "qr_token": req.qr_token,
+                "station": req.station_code,
+                "gate": req.gate_code,
+                "timestamp": req.timestamp or datetime.now()
+            }
+        )
+
+        # 片道切符の場合、ステータスを使用済みに更新
+        if ticket_type == "single":
+            db.execute(
+                text("""
+                UPDATE tickets
+                SET status = 'used', used_at = :used_at
+                WHERE ticket_id = :ticket_id
+                """),
+                {
+                    "ticket_id": ticket_id,
+                    "used_at": req.timestamp or datetime.now()
+                }
+            )
+            print(f"   ✓ 片道切符を使用済みに更新")
+
+        db.commit()
+
+        print(f"   ✓ 出場完了: 料金¥{price}")
+
+        return {
+            "status": "ok",
+            "mode": "exit",
+            "ticket_id": ticket_id,
+            "ticket_type": ticket_type,
+            "usage_amount": price,
+            "origin_station": origin_station,
+            "destination_station": destination_station,
+            "is_ticket": True  # 切符であることを示すフラグ
+        }
+
+    else:
+        # 入場処理（初回 or 往復切符の2回目入場）
+        print(f"   モード: 入場")
+        print(f"   入場駅: {req.station_code}")
+
+        # 往復切符の場合、2回の入場（往路・復路）を許可
+        if ticket_type == "round_trip" and len(usage_history) >= 2:
+            # 既に2回出場している場合はエラー
+            exit_count = sum(1 for h in usage_history if h[0] == "exit")
+            if exit_count >= 2:
+                print("   ✗ 往復切符は既に2回使用されています")
+                return {"status": "error", "message": "ticket_already_used"}
+
+        # 使用履歴に入場を記録
+        db.execute(
+            text("""
+            INSERT INTO ticket_usage
+            (ticket_id, qr_token, action, station_code, gate_code, timestamp)
+            VALUES (:ticket_id, :qr_token, 'entry', :station, :gate, :timestamp)
+            """),
+            {
+                "ticket_id": ticket_id,
+                "qr_token": req.qr_token,
+                "station": req.station_code,
+                "gate": req.gate_code,
+                "timestamp": req.timestamp or datetime.now()
+            }
+        )
+        db.commit()
+
+        print(f"   ✓ 入場完了")
+
+        return {
+            "status": "ok",
+            "mode": "entry",
+            "ticket_id": ticket_id,
+            "ticket_type": ticket_type,
+            "origin_station": origin_station,
+            "destination_station": destination_station,
+            "is_ticket": True  # 切符であることを示すフラグ
+        }
+
+# ============================================
+# 駅情報API
+# ============================================
+
+@app.get("/admin/stations")
+def get_stations(db: Session = Depends(get_db)):
+    """
+    全駅の一覧を取得
+    """
+    stations = db.query(models.Station).order_by(models.Station.code).all()
+    return {
+        "stations": [
+            {
+                "code": s.code,
+                "name": s.name
+            }
+            for s in stations
+        ]
+    }
+
+@app.post("/admin/ticket/calculate-max-fare")
+def calculate_max_fare(
+    request: dict,
+    db: Session = Depends(get_db)
+):
+    """
+    指定された発駅から全駅への最大料金を計算
+    """
+    origin = request.get("origin_station")
+    ticket_type = request.get("ticket_type", "single")
+
+    if not origin:
+        raise HTTPException(status_code=400, detail="origin_station is required")
+
+    # 発駅の存在確認
+    origin_station = db.query(models.Station).filter(models.Station.code == origin).first()
+    if not origin_station:
+        raise HTTPException(status_code=404, detail="Origin station not found")
+
+    # 全駅を取得
+    all_stations = db.query(models.Station).filter(models.Station.code != origin).all()
+
+    max_fare = 0
+    max_fare_station = None
+    max_distance = 0
+
+    # 各駅への料金を計算し、最大値を見つける
+    for dest_station in all_stations:
+        # 駅間の距離を計算
+        distance_km = calculate_station_distance(origin, dest_station.code, db)
+
+        if distance_km is not None and distance_km > 0:
+            fare = int(get_fare_from_distance(distance_km, db))
+
+            if fare > max_fare or (fare == max_fare and distance_km > max_distance):
+                max_fare = fare
+                max_fare_station = dest_station.code
+                max_distance = distance_km
+
+    # 切符種類による料金調整
+    if ticket_type == "round_trip":
+        display_fare = max_fare * 2
+    elif ticket_type == "day_pass":
+        display_fare = 1000  # 一日券は固定料金
+    else:  # single
+        display_fare = max_fare
+
+    return {
+        "origin_station": origin,
+        "max_destination": max_fare_station,
+        "max_distance_km": max_distance,
+        "base_fare": max_fare,
+        "ticket_type": ticket_type,
+        "total_fare": display_fare
+    }

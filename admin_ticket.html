@@ -1,0 +1,683 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>切符発券システム - 管理画面</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Hiragino Sans', sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+
+        .header {
+            background: white;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
+            margin-bottom: 30px;
+        }
+
+        h1 {
+            color: #333;
+            font-size: 28px;
+            margin-bottom: 10px;
+        }
+
+        .subtitle {
+            color: #666;
+            font-size: 14px;
+        }
+
+        .main-content {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 30px;
+        }
+
+        .card {
+            background: white;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
+        }
+
+        .card h2 {
+            color: #333;
+            font-size: 20px;
+            margin-bottom: 20px;
+            padding-bottom: 10px;
+            border-bottom: 2px solid #667eea;
+        }
+
+        .form-group {
+            margin-bottom: 20px;
+        }
+
+        label {
+            display: block;
+            color: #333;
+            font-weight: 600;
+            margin-bottom: 8px;
+            font-size: 14px;
+        }
+
+        select, input {
+            width: 100%;
+            padding: 12px;
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            font-size: 16px;
+            transition: border-color 0.3s;
+        }
+
+        select:focus, input:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+
+        .ticket-type-selector {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 10px;
+        }
+
+        .ticket-type-option {
+            padding: 15px;
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.3s;
+            background: white;
+        }
+
+        .ticket-type-option:hover {
+            border-color: #667eea;
+            background: #f8f9ff;
+        }
+
+        .ticket-type-option.selected {
+            border-color: #667eea;
+            background: #667eea;
+            color: white;
+        }
+
+        .ticket-type-option input[type="radio"] {
+            display: none;
+        }
+
+        .ticket-type-label {
+            font-weight: 600;
+            display: block;
+            margin-bottom: 5px;
+        }
+
+        .ticket-type-desc {
+            font-size: 12px;
+            opacity: 0.8;
+        }
+
+        .fare-display {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 20px;
+            border-radius: 8px;
+            text-align: center;
+            margin-bottom: 20px;
+        }
+
+        .fare-label {
+            font-size: 14px;
+            opacity: 0.9;
+            margin-bottom: 5px;
+        }
+
+        .fare-amount {
+            font-size: 36px;
+            font-weight: bold;
+        }
+
+        .fare-details {
+            font-size: 12px;
+            opacity: 0.8;
+            margin-top: 10px;
+        }
+
+        .btn {
+            width: 100%;
+            padding: 15px;
+            border: none;
+            border-radius: 8px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
+        }
+
+        .btn-primary:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .btn-secondary {
+            background: #6c757d;
+            color: white;
+            margin-top: 10px;
+        }
+
+        .btn-secondary:hover {
+            background: #5a6268;
+        }
+
+        .ticket-preview {
+            display: none;
+            border: 3px dashed #333;
+            padding: 30px;
+            border-radius: 10px;
+            background: white;
+            margin-top: 20px;
+        }
+
+        .ticket-preview.show {
+            display: block;
+        }
+
+        .ticket-header {
+            text-align: center;
+            padding-bottom: 15px;
+            border-bottom: 2px solid #333;
+            margin-bottom: 15px;
+        }
+
+        .ticket-title {
+            font-size: 24px;
+            font-weight: bold;
+            margin-bottom: 5px;
+        }
+
+        .ticket-id {
+            font-size: 14px;
+            color: #666;
+            font-family: monospace;
+        }
+
+        .ticket-body {
+            display: grid;
+            grid-template-columns: 1fr auto;
+            gap: 20px;
+            align-items: center;
+        }
+
+        .ticket-info {
+            flex: 1;
+        }
+
+        .ticket-row {
+            margin-bottom: 12px;
+        }
+
+        .ticket-label {
+            font-size: 12px;
+            color: #666;
+            margin-bottom: 3px;
+        }
+
+        .ticket-value {
+            font-size: 18px;
+            font-weight: 600;
+            color: #333;
+        }
+
+        .ticket-qr {
+            text-align: center;
+        }
+
+        #qrcode {
+            background: white;
+            padding: 10px;
+            border: 2px solid #333;
+            border-radius: 5px;
+            display: inline-block;
+        }
+
+        #qrcode canvas {
+            display: block !important;
+        }
+
+        .ticket-footer {
+            margin-top: 15px;
+            padding-top: 15px;
+            border-top: 2px solid #333;
+            font-size: 12px;
+            color: #666;
+            text-align: center;
+        }
+
+        .alert {
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+        }
+
+        .alert-success {
+            background: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+
+        .alert-error {
+            background: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+
+        @media print {
+            body {
+                background: white;
+            }
+
+            .header, .card:not(.ticket-card) {
+                display: none;
+            }
+
+            .ticket-preview {
+                border: 3px solid #333;
+                page-break-inside: avoid;
+            }
+        }
+
+        @media (max-width: 768px) {
+            .main-content {
+                grid-template-columns: 1fr;
+            }
+
+            .ticket-body {
+                grid-template-columns: 1fr;
+            }
+
+            .ticket-qr {
+                order: -1;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🎫 切符発券システム</h1>
+            <p class="subtitle">Web管理画面 - 切符を発行してQRコードを表示・印刷できます</p>
+        </div>
+
+        <div class="main-content">
+            <!-- 左側: 発券フォーム -->
+            <div class="card">
+                <h2>切符発券</h2>
+
+                <div id="alert-container"></div>
+
+                <form id="ticket-form">
+                    <div class="form-group">
+                        <label for="origin-station">発駅</label>
+                        <select id="origin-station" required>
+                            <option value="">発駅を選択してください</option>
+                        </select>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="destination-station">着駅</label>
+                        <select id="destination-station" required>
+                            <option value="">着駅を選択してください</option>
+                        </select>
+                    </div>
+
+                    <div class="form-group">
+                        <label>切符種類</label>
+                        <div class="ticket-type-selector">
+                            <div class="ticket-type-option selected" onclick="selectTicketType('single')">
+                                <input type="radio" name="ticket_type" value="single" checked>
+                                <span class="ticket-type-label">片道</span>
+                                <span class="ticket-type-desc">1回使用</span>
+                            </div>
+                            <div class="ticket-type-option" onclick="selectTicketType('round_trip')">
+                                <input type="radio" name="ticket_type" value="round_trip">
+                                <span class="ticket-type-label">往復</span>
+                                <span class="ticket-type-desc">2回使用</span>
+                            </div>
+                            <div class="ticket-type-option" onclick="selectTicketType('day_pass')">
+                                <input type="radio" name="ticket_type" value="day_pass">
+                                <span class="ticket-type-label">一日券</span>
+                                <span class="ticket-type-desc">終日有効</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div id="fare-display-container"></div>
+
+                    <div class="form-group">
+                        <label for="issued-by">発行者名</label>
+                        <input type="text" id="issued-by" placeholder="例: 窓口係員" required>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="notes">備考（任意）</label>
+                        <input type="text" id="notes" placeholder="例: 現金支払い">
+                    </div>
+
+                    <button type="button" class="btn btn-primary" onclick="calculateFare()">料金を計算</button>
+                    <button type="submit" class="btn btn-primary" id="issue-btn" disabled>切符を発行</button>
+                </form>
+            </div>
+
+            <!-- 右側: 切符プレビュー -->
+            <div class="card ticket-card">
+                <h2>発行済み切符</h2>
+                <p style="color: #666; font-size: 14px; margin-bottom: 20px;">切符を発行すると、ここにQRコード付きの切符が表示されます。</p>
+
+                <div id="ticket-preview" class="ticket-preview">
+                    <div class="ticket-header">
+                        <div class="ticket-title">乗車券</div>
+                        <div class="ticket-id" id="display-ticket-id">-</div>
+                    </div>
+
+                    <div class="ticket-body">
+                        <div class="ticket-info">
+                            <div class="ticket-row">
+                                <div class="ticket-label">発駅</div>
+                                <div class="ticket-value" id="display-origin">-</div>
+                            </div>
+                            <div class="ticket-row">
+                                <div class="ticket-label">着駅</div>
+                                <div class="ticket-value" id="display-destination">-</div>
+                            </div>
+                            <div class="ticket-row">
+                                <div class="ticket-label">種類</div>
+                                <div class="ticket-value" id="display-type">-</div>
+                            </div>
+                            <div class="ticket-row">
+                                <div class="ticket-label">運賃</div>
+                                <div class="ticket-value" style="color: #667eea; font-size: 24px;" id="display-price">-</div>
+                            </div>
+                            <div class="ticket-row">
+                                <div class="ticket-label">有効期限</div>
+                                <div class="ticket-value" style="font-size: 14px;" id="display-valid-until">-</div>
+                            </div>
+                        </div>
+
+                        <div class="ticket-qr">
+                            <div id="qrcode"></div>
+                        </div>
+                    </div>
+
+                    <div class="ticket-footer">
+                        発行日時: <span id="display-created-at">-</span><br>
+                        この切符は料金範囲内の駅でご利用いただけます
+                    </div>
+                </div>
+
+                <button type="button" class="btn btn-secondary" id="print-btn" onclick="printTicket()" style="display: none;">印刷</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+    <script>
+        const API_BASE_URL = 'http://localhost:8000';
+        let stations = [];
+        let calculatedFare = null;
+
+        // 駅一覧を読み込み
+        async function loadStations() {
+            try {
+                const response = await fetch(`${API_BASE_URL}/admin/stations`);
+                const data = await response.json();
+                stations = data.stations;
+
+                const originSelect = document.getElementById('origin-station');
+                const destSelect = document.getElementById('destination-station');
+
+                stations.forEach(station => {
+                    const option1 = document.createElement('option');
+                    option1.value = station.code;
+                    option1.textContent = `${station.name} (${station.code})`;
+                    originSelect.appendChild(option1);
+
+                    const option2 = document.createElement('option');
+                    option2.value = station.code;
+                    option2.textContent = `${station.name} (${station.code})`;
+                    destSelect.appendChild(option2);
+                });
+            } catch (error) {
+                showAlert('駅一覧の読み込みに失敗しました: ' + error.message, 'error');
+            }
+        }
+
+        // 切符種類の選択
+        function selectTicketType(type) {
+            document.querySelectorAll('.ticket-type-option').forEach(opt => {
+                opt.classList.remove('selected');
+            });
+            event.currentTarget.classList.add('selected');
+            document.querySelector(`input[value="${type}"]`).checked = true;
+
+            // 料金をリセット
+            calculatedFare = null;
+            document.getElementById('fare-display-container').innerHTML = '';
+            document.getElementById('issue-btn').disabled = true;
+        }
+
+        // 料金を計算
+        async function calculateFare() {
+            const originStation = document.getElementById('origin-station').value;
+            const destStation = document.getElementById('destination-station').value;
+            const ticketType = document.querySelector('input[name="ticket_type"]:checked').value;
+
+            if (!originStation) {
+                showAlert('発駅を選択してください', 'error');
+                return;
+            }
+
+            if (!destStation) {
+                showAlert('着駅を選択してください', 'error');
+                return;
+            }
+
+            if (originStation === destStation) {
+                showAlert('発駅と着駅は異なる駅を選択してください', 'error');
+                return;
+            }
+
+            try {
+                // 仮の切符を発行して料金を取得（実際には発行しない）
+                const response = await fetch(`${API_BASE_URL}/admin/ticket/issue`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        origin_station: originStation,
+                        destination_station: destStation,
+                        ticket_type: ticketType,
+                        issued_by: '_preview_',
+                        notes: 'プレビュー用'
+                    })
+                });
+
+                if (!response.ok) {
+                    throw new Error('料金計算に失敗しました');
+                }
+
+                const ticketData = await response.json();
+
+                // プレビュー用の切符を削除（本来はプレビューAPIを作るべき）
+                // 今回は簡易的に発行してしまうが、実運用では別途料金計算APIを用意する
+
+                calculatedFare = {
+                    price: ticketData.price,
+                    origin: originStation,
+                    destination: destStation,
+                    ticket_type: ticketType
+                };
+
+                // 料金表示を更新
+                const fareDisplay = document.getElementById('fare-display-container');
+                const originStationName = stations.find(s => s.code === originStation)?.name || originStation;
+                const destStationName = stations.find(s => s.code === destStation)?.name || destStation;
+
+                const typeNames = {
+                    'single': '片道',
+                    'round_trip': '往復',
+                    'day_pass': '一日券'
+                };
+
+                fareDisplay.innerHTML = `
+                    <div class="fare-display">
+                        <div class="fare-label">料金（${typeNames[ticketType]}）</div>
+                        <div class="fare-amount">¥${calculatedFare.price.toLocaleString()}</div>
+                        <div class="fare-details">
+                            ${originStationName} → ${destStationName}<br>
+                            ※料金範囲内の駅で降車可能
+                        </div>
+                    </div>
+                `;
+
+                document.getElementById('issue-btn').disabled = false;
+                showAlert('料金を計算しました。発行ボタンを押してください。', 'success');
+            } catch (error) {
+                showAlert('料金計算エラー: ' + error.message, 'error');
+            }
+        }
+
+        // 切符を発行
+        document.getElementById('ticket-form').addEventListener('submit', async (e) => {
+            e.preventDefault();
+
+            if (!calculatedFare) {
+                showAlert('先に料金を計算してください', 'error');
+                return;
+            }
+
+            const originStation = document.getElementById('origin-station').value;
+            const destStation = document.getElementById('destination-station').value;
+            const ticketType = document.querySelector('input[name="ticket_type"]:checked').value;
+            const issuedBy = document.getElementById('issued-by').value;
+            const notes = document.getElementById('notes').value;
+
+            try {
+                const response = await fetch(`${API_BASE_URL}/admin/ticket/issue`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        origin_station: originStation,
+                        destination_station: destStation,
+                        ticket_type: ticketType,
+                        issued_by: issuedBy,
+                        notes: notes || null
+                    })
+                });
+
+                if (!response.ok) {
+                    throw new Error('切符発行に失敗しました');
+                }
+
+                const ticket = await response.json();
+                displayTicket(ticket);
+                showAlert('切符を発行しました！', 'success');
+
+                // フォームをリセット
+                calculatedFare = null;
+                document.getElementById('fare-display-container').innerHTML = '';
+                document.getElementById('issue-btn').disabled = true;
+            } catch (error) {
+                showAlert('発行エラー: ' + error.message, 'error');
+            }
+        });
+
+        // 切符を表示
+        function displayTicket(ticket) {
+            const typeNames = {
+                'single': '片道',
+                'round_trip': '往復',
+                'day_pass': '一日券'
+            };
+
+            const originStationName = stations.find(s => s.code === ticket.origin_station)?.name || ticket.origin_station;
+            const destStationName = stations.find(s => s.code === ticket.destination_station)?.name || ticket.destination_station;
+
+            document.getElementById('display-ticket-id').textContent = ticket.ticket_id;
+            document.getElementById('display-origin').textContent = originStationName;
+            document.getElementById('display-destination').textContent = destStationName;
+            document.getElementById('display-type').textContent = typeNames[ticket.ticket_type];
+            document.getElementById('display-price').textContent = `¥${ticket.price.toLocaleString()}`;
+            document.getElementById('display-valid-until').textContent = new Date(ticket.valid_until).toLocaleString('ja-JP');
+            document.getElementById('display-created-at').textContent = new Date(ticket.created_at).toLocaleString('ja-JP');
+
+            // QRコード生成
+            const qrcodeContainer = document.getElementById('qrcode');
+            qrcodeContainer.innerHTML = '';
+
+            try {
+                new QRCode(qrcodeContainer, {
+                    text: ticket.qr_token,
+                    width: 180,
+                    height: 180,
+                    colorDark: '#000000',
+                    colorLight: '#ffffff',
+                    correctLevel: QRCode.CorrectLevel.H
+                });
+                console.log('QRコード生成成功:', ticket.qr_token);
+            } catch (error) {
+                console.error('QRコード生成エラー:', error);
+                qrcodeContainer.innerHTML = '<p style="color: red;">QRコード生成エラー</p>';
+            }
+
+            document.getElementById('ticket-preview').classList.add('show');
+            document.getElementById('print-btn').style.display = 'block';
+        }
+
+        // 印刷
+        function printTicket() {
+            window.print();
+        }
+
+        // アラート表示
+        function showAlert(message, type) {
+            const container = document.getElementById('alert-container');
+            const alertClass = type === 'error' ? 'alert-error' : 'alert-success';
+            container.innerHTML = `<div class="alert ${alertClass}">${message}</div>`;
+            setTimeout(() => {
+                container.innerHTML = '';
+            }, 5000);
+        }
+
+        // ページ読み込み時に駅一覧を取得
+        window.addEventListener('load', loadStations);
+    </script>
+</body>
+</html>

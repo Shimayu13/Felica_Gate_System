@@ -519,8 +519,35 @@ struct GateView: View {
                 let usageAmount = json?["usage_amount"] as? Double
                 let balanceAfterScan = json?["balance"] as? Double
                 let userId = json?["user_id"] as? Int
+                let isTicket = json?["is_ticket"] as? Bool ?? false
 
                 GateSound.playSuccess()
+
+                // 切符の場合は切符情報を表示
+                if isTicket {
+                    let ticketId = json?["ticket_id"] as? String ?? "不明"
+                    let ticketType = json?["ticket_type"] as? String ?? "不明"
+                    let originStation = json?["origin_station"] as? String ?? "不明"
+                    let destinationStation = json?["destination_station"] as? String ?? "不明"
+
+                    let ticketTypeJa: String
+                    switch ticketType {
+                    case "single": ticketTypeJa = "片道"
+                    case "round_trip": ticketTypeJa = "往復"
+                    case "day_pass": ticketTypeJa = "一日券"
+                    default: ticketTypeJa = ticketType
+                    }
+
+                    if mode == "entry" {
+                        resultMessage = "入場しました\n\n切符番号: \(ticketId)\n種類: \(ticketTypeJa)\n区間: \(originStation) → \(destinationStation)"
+                    } else if mode == "exit" {
+                        let fare = usageAmount ?? 0
+                        resultMessage = "出場しました\n\n切符番号: \(ticketId)\n種類: \(ticketTypeJa)\n運賃: ¥\(String(format: "%.0f", fare))"
+                    }
+                    scanResult = nil
+                    scheduleClearDisplay()
+                    return
+                }
 
                 // QRトークンがある場合は従来のフローでユーザー情報を取得
                 // 顔認証の場合（qrToken == nil）は直接ユーザー情報を取得
@@ -555,8 +582,16 @@ struct GateView: View {
                    let currentBalance = json?["current_balance"] as? Double {
                     resultMessage = "残高不足で出場できません\n\n必要運賃: ¥\(String(format: "%.0f", requiredFare))\n現在残高: ¥\(String(format: "%.0f", currentBalance))\n不足額: ¥\(String(format: "%.0f", requiredFare - currentBalance))"
                     GateSound.playError()
+                } else if message == "fare_insufficient",
+                   let requiredFare = json?["required_fare"] as? Double,
+                   let ticketFare = json?["ticket_fare"] as? Double,
+                   let shortage = json?["shortage"] as? Double {
+                    // 切符の料金不足エラー
+                    resultMessage = "料金不足で出場できません\n\n必要運賃: ¥\(String(format: "%.0f", requiredFare))\n切符料金: ¥\(String(format: "%.0f", ticketFare))\n不足額: ¥\(String(format: "%.0f", shortage))"
+                    GateSound.playError()
                 } else {
                     resultMessage = "エラー:\n\(translateErrorMessage(message))"
+                    GateSound.playError()
                 }
                 scanResult = nil
                 scheduleClearDisplay()
@@ -674,6 +709,18 @@ struct GateView: View {
             return "残高が足りません"
         case "user_not_found_for_card":
             return "このカードにユーザーが紐付いていません"
+        case "ticket_not_found":
+            return "切符が見つかりません"
+        case "ticket_already_used":
+            return "この切符は既に使用済みです"
+        case "ticket_expired":
+            return "この切符は有効期限切れです"
+        case "ticket_cancelled":
+            return "この切符はキャンセルされています"
+        case "ticket_invalid_status":
+            return "無効な切符です"
+        case "fare_insufficient":
+            return "料金不足で出場できません"
         default:
             return message
         }
