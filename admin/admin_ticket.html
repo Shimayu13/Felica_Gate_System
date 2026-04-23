@@ -512,18 +512,15 @@
             }
 
             try {
-                // 仮の切符を発行して料金を取得（実際には発行しない）
-                const response = await fetch(`${API_BASE_URL}/admin/ticket/issue`, {
+                // 料金を計算
+                const response = await fetch(`${API_BASE_URL}/admin/ticket/calculate-max-fare`, {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
                     },
                     body: JSON.stringify({
                         origin_station: originStation,
-                        destination_station: destStation,
-                        ticket_type: ticketType,
-                        issued_by: '_preview_',
-                        notes: 'プレビュー用'
+                        ticket_type: ticketType
                     })
                 });
 
@@ -531,13 +528,10 @@
                     throw new Error('料金計算に失敗しました');
                 }
 
-                const ticketData = await response.json();
-
-                // プレビュー用の切符を削除（本来はプレビューAPIを作るべき）
-                // 今回は簡易的に発行してしまうが、実運用では別途料金計算APIを用意する
+                const fareData = await response.json();
 
                 calculatedFare = {
-                    price: ticketData.price,
+                    price: fareData.max_fare,
                     origin: originStation,
                     destination: destStation,
                     ticket_type: ticketType

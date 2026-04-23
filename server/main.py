@@ -19,7 +19,7 @@ import json
 app = FastAPI(title="Felica Gate Server")
 
 # 静的ファイル配信（管理画面用）
-app.mount("/admin", StaticFiles(directory="../admin", html=True), name="admin")
+app.mount("/static/admin", StaticFiles(directory="../admin", html=True), name="admin")
 
 # CORS設定（管理画面からのアクセスを許可）
 app.add_middleware(
