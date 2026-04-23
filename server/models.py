@@ -9,20 +9,16 @@ class TripStatus(str, enum.Enum):
     completed = "completed"
     cancelled = "cancelled"
 
-class PassType(str, enum.Enum):
-    commuter = "commuter"  # 通勤定期
-    student = "student"    # 通学定期
-
 class User(Base):
     __tablename__ = "users"
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String, nullable=False)
     email = Column(String, unique=True, nullable=True)
     balance = Column(Numeric(10,2), default=0)
-    qr_token = Column(String, unique=True, nullable=True, index=True)
-    card_idm = Column(String, nullable=True)
+    qr_token = Column(String, unique=True, nullable=True)
+    card_idm = Column(String, unique=True, nullable=True)
     cards = relationship("Card", back_populates="user")
-    passes = relationship("Pass", back_populates="user")
+    face_data = relationship("FaceData", back_populates="user", uselist=False)
 
 class Card(Base):
     __tablename__ = "cards"
@@ -51,7 +47,7 @@ class Trip(Base):
     __tablename__ = "trips"
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=True)
-    card_id = Column(Integer, ForeignKey("cards.id"), nullable=True)  # 顔認証の場合はNULL
+    card_id = Column(Integer, ForeignKey("cards.id"), nullable=False)
     station_in = Column(String, nullable=True)
     gate_in = Column(String, nullable=True)
     station_out = Column(String, nullable=True)
@@ -60,45 +56,41 @@ class Trip(Base):
     entered_at = Column(DateTime, default=datetime.utcnow)
     exited_at = Column(DateTime, nullable=True)
     device_id = Column(String, nullable=True)
+    used_pass_id = Column(Integer, ForeignKey("passes.id"), nullable=True)
     timestamp = Column(DateTime, default=datetime.utcnow)
-    used_pass_id = Column(Integer, ForeignKey("passes.id"), nullable=True)  # 使用した定期券ID
-    fare_amount = Column(Numeric(10,2), nullable=True)  # 運賃額
-    balance_before = Column(Numeric(10,2), nullable=True)  # 出場前の残高
-    balance_after = Column(Numeric(10,2), nullable=True)  # 出場後の残高
     card = relationship("Card", back_populates="trips")
-
-class Pass(Base):
-    __tablename__ = "passes"
-    id = Column(Integer, primary_key=True, index=True)
-    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
-    pass_type = Column(Enum(PassType), nullable=False)
-    station_from = Column(String, nullable=False)  # 定期券の開始駅
-    station_to = Column(String, nullable=False)    # 定期券の終了駅
-    valid_from = Column(DateTime, nullable=False)   # 有効期間開始日
-    valid_until = Column(DateTime, nullable=False)  # 有効期間終了日
-    is_active = Column(Integer, default=1)          # アクティブフラグ（1=有効、0=無効）
-    created_at = Column(DateTime, default=datetime.utcnow)
-    user = relationship("User", back_populates="passes")
 
 class Purchase(Base):
     __tablename__ = "purchases"
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
     card_id = Column(Integer, ForeignKey("cards.id"), nullable=False)
-    amount = Column(Numeric(10,2), nullable=False)  # 購入金額
-    description = Column(String, nullable=True)      # 商品説明
-    store_code = Column(String, nullable=True)       # 店舗コード（gate_codeを流用）
-    balance_before = Column(Numeric(10,2), nullable=True)  # 決済前の残高
-    balance_after = Column(Numeric(10,2), nullable=True)   # 決済後の残高
+    amount = Column(Numeric(10,2), nullable=False)
+    description = Column(String, nullable=True)
+    store_code = Column(String, nullable=True)
+    balance_before = Column(Numeric(10,2), nullable=True)
+    balance_after = Column(Numeric(10,2), nullable=True)
     device_id = Column(String, nullable=True)
     purchased_at = Column(DateTime, default=datetime.utcnow)
-    timestamp = Column(DateTime, default=datetime.utcnow)
 
 class FaceData(Base):
     __tablename__ = "face_data"
     id = Column(Integer, primary_key=True, index=True)
-    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, unique=True)
-    face_encoding = Column(String, nullable=False)  # JSON形式で保存された顔エンコーディング
+    user_id = Column(Integer, ForeignKey("users.id"), unique=True, nullable=False)
+    face_encoding = Column(String, nullable=False)
     registered_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
-    is_active = Column(Integer, default=1)  # 1=有効、0=無効
+    updated_at = Column(DateTime, default=datetime.utcnow)
+    is_active = Column(Integer, default=1)
+    user = relationship("User", back_populates="face_data")
+
+class Pass(Base):
+    __tablename__ = "passes"
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    pass_type = Column(String, nullable=False)
+    station_from = Column(String, nullable=False)
+    station_to = Column(String, nullable=False)
+    valid_from = Column(DateTime, nullable=False)
+    valid_until = Column(DateTime, nullable=False)
+    is_active = Column(Integer, default=1)
+    created_at = Column(DateTime, default=datetime.utcnow)

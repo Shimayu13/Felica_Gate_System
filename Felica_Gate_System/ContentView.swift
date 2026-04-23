@@ -68,6 +68,15 @@ struct GateView: View {
         case face
     }
 
+    private func localizedTicketType(_ ticketType: String) -> String {
+        switch ticketType {
+        case "single": return "片道"
+        case "round_trip": return "往復"
+        case "day_pass": return "一日券"
+        default: return ticketType
+        }
+    }
+
     var body: some View {
         GeometryReader { geometry in
             VStack(spacing: 0) {
@@ -109,67 +118,164 @@ struct GateView: View {
 
                                 Divider()
 
-                                // ユーザー情報
-                                if let userName = result.userName {
-                                    HStack {
-                                        Image(systemName: "person.circle.fill")
-                                            .font(.system(size: 40))
-                                            .foregroundColor(.blue)
-
-                                        Text(userName)
-                                            .font(.title2)
-                                            .fontWeight(.semibold)
-
-                                        Spacer()
-                                    }
-                                }
-
-                                // 残高表示
-                                if let balance = result.balance {
-                                    VStack(spacing: 8) {
+                                // 切符情報または通常のユーザー情報
+                                if result.isTicket {
+                                    // 切符情報表示
+                                    if let ticketId = result.ticketId {
                                         HStack {
-                                            Text("残高")
-                                                .font(.headline)
-                                                .foregroundColor(.secondary)
-                                            Spacer()
-                                        }
-
-                                        HStack {
-                                            Text("¥\(String(format: "%.0f", balance))")
-                                                .font(.system(size: 48, weight: .bold, design: .rounded))
-                                                .foregroundColor(balance < 1000 ? .red : .primary)
-
-                                            Spacer()
-                                        }
-                                    }
-                                    .padding()
-                                    .frame(maxWidth: .infinity)
-                                    .background(Color.blue.opacity(0.05))
-                                    .cornerRadius(12)
-                                }
-
-                                // 利用金額表示（将来的な準備）
-                                if let usageAmount = result.usageAmount {
-                                    VStack(spacing: 8) {
-                                        HStack {
-                                            Text("利用金額")
-                                                .font(.headline)
-                                                .foregroundColor(.secondary)
-                                            Spacer()
-                                        }
-
-                                        HStack {
-                                            Text("¥\(String(format: "%.0f", usageAmount))")
-                                                .font(.system(size: 36, weight: .semibold, design: .rounded))
+                                            Image(systemName: "ticket.fill")
+                                                .font(.system(size: 40))
                                                 .foregroundColor(.orange)
 
+                                            VStack(alignment: .leading, spacing: 4) {
+                                                Text("切符番号")
+                                                    .font(.caption)
+                                                    .foregroundColor(.secondary)
+                                                Text(ticketId)
+                                                    .font(.title3)
+                                                    .fontWeight(.semibold)
+                                            }
+
                                             Spacer()
                                         }
                                     }
-                                    .padding()
-                                    .frame(maxWidth: .infinity)
-                                    .background(Color.orange.opacity(0.05))
-                                    .cornerRadius(12)
+
+                                    // 切符種別表示
+                                    if let ticketType = result.ticketType {
+                                        let ticketTypeJa = localizedTicketType(ticketType)
+
+                                        VStack(spacing: 8) {
+                                            HStack {
+                                                Text("種別")
+                                                    .font(.headline)
+                                                    .foregroundColor(.secondary)
+                                                Spacer()
+                                            }
+
+                                            HStack {
+                                                Text(ticketTypeJa)
+                                                    .font(.system(size: 28, weight: .bold, design: .rounded))
+                                                    .foregroundColor(.orange)
+
+                                                Spacer()
+                                            }
+                                        }
+                                        .padding()
+                                        .frame(maxWidth: .infinity)
+                                        .background(Color.orange.opacity(0.05))
+                                        .cornerRadius(12)
+                                    }
+
+                                    // 区間表示
+                                    if let origin = result.originStation, let destination = result.destinationStation {
+                                        VStack(spacing: 8) {
+                                            HStack {
+                                                Text("区間")
+                                                    .font(.headline)
+                                                    .foregroundColor(.secondary)
+                                                Spacer()
+                                            }
+
+                                            HStack {
+                                                Text("\(origin) → \(destination)")
+                                                    .font(.system(size: 24, weight: .semibold, design: .rounded))
+                                                    .foregroundColor(.primary)
+
+                                                Spacer()
+                                            }
+                                        }
+                                        .padding()
+                                        .frame(maxWidth: .infinity)
+                                        .background(Color.blue.opacity(0.05))
+                                        .cornerRadius(12)
+                                    }
+
+                                    // 利用金額表示（出場時）
+                                    if result.mode == "exit", let usageAmount = result.usageAmount {
+                                        VStack(spacing: 8) {
+                                            HStack {
+                                                Text("運賃")
+                                                    .font(.headline)
+                                                    .foregroundColor(.secondary)
+                                                Spacer()
+                                            }
+
+                                            HStack {
+                                                Text("¥\(String(format: "%.0f", usageAmount))")
+                                                    .font(.system(size: 36, weight: .semibold, design: .rounded))
+                                                    .foregroundColor(.green)
+
+                                                Spacer()
+                                            }
+                                        }
+                                        .padding()
+                                        .frame(maxWidth: .infinity)
+                                        .background(Color.green.opacity(0.05))
+                                        .cornerRadius(12)
+                                    }
+                                } else {
+                                    // 通常のユーザー情報表示
+                                    if let userName = result.userName {
+                                        HStack {
+                                            Image(systemName: "person.circle.fill")
+                                                .font(.system(size: 40))
+                                                .foregroundColor(.blue)
+
+                                            Text(userName)
+                                                .font(.title2)
+                                                .fontWeight(.semibold)
+
+                                            Spacer()
+                                        }
+                                    }
+
+                                    // 残高表示
+                                    if let balance = result.balance {
+                                        VStack(spacing: 8) {
+                                            HStack {
+                                                Text("残高")
+                                                    .font(.headline)
+                                                    .foregroundColor(.secondary)
+                                                Spacer()
+                                            }
+
+                                            HStack {
+                                                Text("¥\(String(format: "%.0f", balance))")
+                                                    .font(.system(size: 48, weight: .bold, design: .rounded))
+                                                    .foregroundColor(balance < 1000 ? .red : .primary)
+
+                                                Spacer()
+                                            }
+                                        }
+                                        .padding()
+                                        .frame(maxWidth: .infinity)
+                                        .background(Color.blue.opacity(0.05))
+                                        .cornerRadius(12)
+                                    }
+
+                                    // 利用金額表示
+                                    if let usageAmount = result.usageAmount {
+                                        VStack(spacing: 8) {
+                                            HStack {
+                                                Text("利用金額")
+                                                    .font(.headline)
+                                                    .foregroundColor(.secondary)
+                                                Spacer()
+                                            }
+
+                                            HStack {
+                                                Text("¥\(String(format: "%.0f", usageAmount))")
+                                                    .font(.system(size: 36, weight: .semibold, design: .rounded))
+                                                    .foregroundColor(.orange)
+
+                                                Spacer()
+                                            }
+                                        }
+                                        .padding()
+                                        .frame(maxWidth: .infinity)
+                                        .background(Color.orange.opacity(0.05))
+                                        .cornerRadius(12)
+                                    }
                                 }
                             }
                             .padding()
@@ -525,26 +631,25 @@ struct GateView: View {
 
                 // 切符の場合は切符情報を表示
                 if isTicket {
-                    let ticketId = json?["ticket_id"] as? String ?? "不明"
-                    let ticketType = json?["ticket_type"] as? String ?? "不明"
-                    let originStation = json?["origin_station"] as? String ?? "不明"
-                    let destinationStation = json?["destination_station"] as? String ?? "不明"
+                    let ticketId = json?["ticket_id"] as? String
+                    let ticketType = json?["ticket_type"] as? String
+                    let originStation = json?["origin_station"] as? String
+                    let destinationStation = json?["destination_station"] as? String
 
-                    let ticketTypeJa: String
-                    switch ticketType {
-                    case "single": ticketTypeJa = "片道"
-                    case "round_trip": ticketTypeJa = "往復"
-                    case "day_pass": ticketTypeJa = "一日券"
-                    default: ticketTypeJa = ticketType
-                    }
-
-                    if mode == "entry" {
-                        resultMessage = "入場しました\n\n切符番号: \(ticketId)\n種類: \(ticketTypeJa)\n区間: \(originStation) → \(destinationStation)"
-                    } else if mode == "exit" {
-                        let fare = usageAmount ?? 0
-                        resultMessage = "出場しました\n\n切符番号: \(ticketId)\n種類: \(ticketTypeJa)\n運賃: ¥\(String(format: "%.0f", fare))"
-                    }
-                    scanResult = nil
+                    scanResult = ScanResult(
+                        mode: mode,
+                        userName: nil,
+                        balance: nil,
+                        stationCode: stationCode,
+                        gateCode: gateCode,
+                        usageAmount: usageAmount,
+                        isTicket: true,
+                        ticketId: ticketId,
+                        ticketType: ticketType,
+                        originStation: originStation,
+                        destinationStation: destinationStation
+                    )
+                    resultMessage = ""
                     scheduleClearDisplay()
                     return
                 }
@@ -685,7 +790,12 @@ struct GateView: View {
                             balance: balanceOverride ?? balance,
                             stationCode: stationCode,
                             gateCode: gateCode,
-                            usageAmount: usageAmount
+                            usageAmount: usageAmount,
+                            isTicket: false,
+                            ticketId: nil,
+                            ticketType: nil,
+                            originStation: nil,
+                            destinationStation: nil
                         )
                         resultMessage = ""
                         scheduleClearDisplay()
@@ -726,6 +836,19 @@ struct GateView: View {
         }
     }
 
+    private func translateTicketType(_ ticketType: String) -> String {
+        switch ticketType {
+        case "single":
+            return "片道"
+        case "round_trip":
+            return "往復"
+        case "day_pass":
+            return "一日券"
+        default:
+            return ticketType
+        }
+    }
+
     private func scheduleClearDisplay() {
         let token = UUID()
         clearDisplayToken = token
@@ -762,6 +885,13 @@ struct ScanResult {
     let stationCode: String?
     let gateCode: String?
     let usageAmount: Double? // 利用金額（将来的な機能）
+
+    // 切符用のフィールド
+    let isTicket: Bool
+    let ticketId: String?
+    let ticketType: String?
+    let originStation: String?
+    let destinationStation: String?
 }
 
 #Preview {
