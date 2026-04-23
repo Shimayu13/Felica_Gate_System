@@ -29,8 +29,8 @@ export default function TripsPage() {
   const fetchTrips = async () => {
     try {
       const url = statusFilter
-        ? `http://localhost:8000/trips?status=${statusFilter}`
-        : 'http://localhost:8000/trips'
+        ? `http://localhost:8001/trips?status=${statusFilter}`
+        : 'http://localhost:8001/trips'
 
       const response = await fetch(url)
       const data = await response.json()
@@ -49,7 +49,7 @@ export default function TripsPage() {
 
     try {
       const response = await fetch(
-        `http://localhost:8000/trips/${tripId}/cancel`,
+        `http://localhost:8001/trips/${tripId}/cancel`,
         {
           method: 'PATCH',
         }

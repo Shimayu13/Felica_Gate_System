@@ -21,7 +21,7 @@ export default function CardsPage() {
 
   const fetchCards = async () => {
     try {
-      const response = await fetch('http://localhost:8000/cards')
+      const response = await fetch('http://localhost:8001/cards')
       const data = await response.json()
       setCards(data)
     } catch (error) {

@@ -20,9 +20,9 @@ export default function Home() {
   const fetchStats = async () => {
     try {
       const [usersRes, tripsRes, cardsRes] = await Promise.all([
-        fetch('http://localhost:8000/users'),
-        fetch('http://localhost:8000/trips'),
-        fetch('http://localhost:8000/cards'),
+        fetch('http://localhost:8001/users'),
+        fetch('http://localhost:8001/trips'),
+        fetch('http://localhost:8001/cards'),
       ])
 
       const users = await usersRes.json()
