@@ -7,18 +7,30 @@
   <link rel="stylesheet" href="styles.css">
 </head>
 <body>
-  <h1>Felica Gate — Admin</h1>
-  <section>
-    <h2>Users</h2>
-    <button id="refreshUsers">Refresh</button>
-    <div id="users"></div>
-  </section>
+  <div class="container">
+    <header>
+      <h1>Felica Gate — Admin Panel</h1>
+      <p>システム管理ダッシュボード</p>
+    </header>
 
-  <section>
-    <h2>Trips</h2>
-    <button id="refreshTrips">Refresh</button>
-    <div id="trips"></div>
-  </section>
+    <div class="dashboard-grid">
+      <section class="card">
+        <div class="card-header">
+          <h2>👥 ユーザー管理</h2>
+          <button id="refreshUsers" class="btn btn-primary">更新</button>
+        </div>
+        <div id="users" class="card-content"></div>
+      </section>
+
+      <section class="card">
+        <div class="card-header">
+          <h2>🚆 履歴管理</h2>
+          <button id="refreshTrips" class="btn btn-primary">更新</button>
+        </div>
+        <div id="trips" class="card-content"></div>
+      </section>
+    </div>
+  </div>
 
   <script src="api.js"></script>
 </body>

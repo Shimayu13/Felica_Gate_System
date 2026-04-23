@@ -15,6 +15,7 @@ interface Trip {
   entered_at: string
   exited_at: string | null
   device_id: string
+  used_pass_id: number | null
 }
 
 export default function TripsPage() {
@@ -175,7 +176,7 @@ export default function TripsPage() {
                         出場時刻
                       </th>
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        ステータス
+                        定期券使用
                       </th>
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                         操作
@@ -208,6 +209,15 @@ export default function TripsPage() {
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap">
                           {getStatusBadge(trip.status)}
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                          {trip.used_pass_id ? (
+                            <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-purple-100 text-purple-800">
+                              使用 (ID: {trip.used_pass_id})
+                            </span>
+                          ) : (
+                            <span className="text-gray-400">-</span>
+                          )}
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
                           {trip.status !== 'cancelled' && (
