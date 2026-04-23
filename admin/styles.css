@@ -41,7 +41,7 @@ header p {
 /* Dashboard grid */
 .dashboard-grid {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
   gap: 30px;
 }
 
@@ -74,6 +74,11 @@ header p {
   margin: 0;
 }
 
+.card-actions {
+  display: flex;
+  gap: 10px;
+}
+
 .card-content {
   padding: 20px;
   max-height: 600px;
@@ -99,13 +104,89 @@ header p {
   color: white;
 }
 
-.btn-secondary {
-  background: #718096;
+.btn-info {
+  background: #3182ce;
   color: white;
 }
 
-.btn-secondary:hover {
-  background: #4a5568;
+.btn-info:hover {
+  background: #2c5282;
+}
+
+.btn-danger {
+  background: #e53e3e;
+  color: white;
+}
+
+.btn-danger:hover {
+  background: #c53030;
+}
+
+.btn-warning {
+  background: #d69e2e;
+  color: white;
+}
+
+.btn-warning:hover {
+  background: #b7791f;
+}
+
+/* Action containers */
+.user-actions, .trip-actions {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-top: 8px;
+}
+
+.user-actions .btn, .trip-actions .btn {
+  font-size: 12px;
+  padding: 4px 8px;
+}
+
+/* カード管理スタイル */
+.card-item {
+  border: 1px solid #e2e8f0;
+  padding: 16px;
+  margin: 12px 0;
+  border-radius: 8px;
+  background: #f8fafc;
+  transition: all 0.3s ease;
+  position: relative;
+}
+
+.card-item:hover {
+  background: #f1f5f9;
+  border-color: #cbd5e1;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+}
+
+.card-info {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.card-info div {
+  font-size: 14px;
+  color: #4a5568;
+}
+
+.card-info strong {
+  color: #2d3748;
+  margin-right: 4px;
+}
+
+.card-actions {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.card-actions .btn {
+  font-size: 12px;
+  padding: 4px 8px;
 }
 
 /* Empty state */

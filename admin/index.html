@@ -17,7 +17,10 @@
       <section class="card">
         <div class="card-header">
           <h2>👥 ユーザー管理</h2>
-          <button id="refreshUsers" class="btn btn-primary">更新</button>
+          <div class="card-actions">
+            <button id="createUser" class="btn btn-primary">新規作成</button>
+            <button id="refreshUsers" class="btn btn-secondary">更新</button>
+          </div>
         </div>
         <div id="users" class="card-content"></div>
       </section>
@@ -25,9 +28,21 @@
       <section class="card">
         <div class="card-header">
           <h2>🚆 履歴管理</h2>
-          <button id="refreshTrips" class="btn btn-primary">更新</button>
+          <div class="card-actions">
+            <button id="createTrip" class="btn btn-primary">新規作成</button>
+            <button id="refreshTrips" class="btn btn-secondary">更新</button>
+          </div>
         </div>
         <div id="trips" class="card-content"></div>
+      <section class="card">
+        <div class="card-header">
+          <h2>💳 カード管理</h2>
+          <div class="card-actions">
+            <button id="createCard" class="btn btn-primary">新規作成</button>
+            <button id="refreshCards" class="btn btn-secondary">更新</button>
+          </div>
+        </div>
+        <div id="cards" class="card-content"></div>
       </section>
     </div>
   </div>

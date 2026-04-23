@@ -1,5 +1,6 @@
 from fastapi import FastAPI, Depends, HTTPException, File, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 from sqlalchemy.orm import Session
 from sqlalchemy import text
 from datetime import datetime
@@ -16,6 +17,9 @@ import face_recognition as face_rec
 import json
 
 app = FastAPI(title="Felica Gate Server")
+
+# 静的ファイル配信（管理画面用）
+app.mount("/admin", StaticFiles(directory="../admin", html=True), name="admin")
 
 # CORS設定（管理画面からのアクセスを許可）
 app.add_middleware(
@@ -1035,6 +1039,45 @@ def patch_balance(user_id: int, amount: float, db: Session = Depends(get_db)):
     db.commit()
     return {"status": "ok", "balance": float(user.balance)}
 
+@app.post("/users")
+def create_user(user: schemas.UserCreate, db: Session = Depends(get_db)):
+    """新規ユーザーを作成"""
+    db_user = models.User(
+        name=user.name,
+        email=user.email,
+        balance=user.balance or 0.0
+    )
+    db.add(db_user)
+    db.commit()
+    db.refresh(db_user)
+    return db_user
+
+@app.put("/users/{user_id}")
+def update_user(user_id: int, user: schemas.UserUpdate, db: Session = Depends(get_db)):
+    """ユーザーを更新"""
+    db_user = db.query(models.User).filter(models.User.id == user_id).first()
+    if not db_user:
+        raise HTTPException(status_code=404, detail="user not found")
+    
+    for field, value in user.dict(exclude_unset=True).items():
+        setattr(db_user, field, value)
+    
+    db.add(db_user)
+    db.commit()
+    db.refresh(db_user)
+    return db_user
+
+@app.delete("/users/{user_id}")
+def delete_user(user_id: int, db: Session = Depends(get_db)):
+    """ユーザーを削除"""
+    db_user = db.query(models.User).filter(models.User.id == user_id).first()
+    if not db_user:
+        raise HTTPException(status_code=404, detail="user not found")
+    
+    db.delete(db_user)
+    db.commit()
+    return {"status": "ok"}
+
 @app.get("/trips")
 def list_trips(status: Optional[str] = None, skip: int = 0, limit: int = 100, db: Session = Depends(get_db)):
     q = db.query(models.Trip)
@@ -1057,6 +1100,49 @@ def cancel_trip(trip_id: int, db: Session = Depends(get_db)):
         raise HTTPException(status_code=404, detail="trip not found")
     trip.status = models.TripStatus.cancelled
     db.add(trip)
+    db.commit()
+    return {"status": "ok"}
+
+@app.post("/trips")
+def create_trip(trip: schemas.TripCreate, db: Session = Depends(get_db)):
+    """新規履歴を作成"""
+    db_trip = models.Trip(
+        user_id=trip.user_id,
+        card_id=trip.card_id,
+        station_in=trip.station_in,
+        gate_in=trip.gate_in,
+        status=trip.status or models.TripStatus.in_progress,
+        fare=trip.fare or 0.0,
+        used_pass_id=trip.used_pass_id
+    )
+    db.add(db_trip)
+    db.commit()
+    db.refresh(db_trip)
+    return db_trip
+
+@app.put("/trips/{trip_id}")
+def update_trip(trip_id: int, trip: schemas.TripUpdate, db: Session = Depends(get_db)):
+    """履歴を更新"""
+    db_trip = db.query(models.Trip).filter(models.Trip.id == trip_id).first()
+    if not db_trip:
+        raise HTTPException(status_code=404, detail="trip not found")
+    
+    for field, value in trip.dict(exclude_unset=True).items():
+        setattr(db_trip, field, value)
+    
+    db.add(db_trip)
+    db.commit()
+    db.refresh(db_trip)
+    return db_trip
+
+@app.delete("/trips/{trip_id}")
+def delete_trip(trip_id: int, db: Session = Depends(get_db)):
+    """履歴を削除"""
+    db_trip = db.query(models.Trip).filter(models.Trip.id == trip_id).first()
+    if not db_trip:
+        raise HTTPException(status_code=404, detail="trip not found")
+    
+    db.delete(db_trip)
     db.commit()
     return {"status": "ok"}
 
@@ -1456,6 +1542,46 @@ def get_card(card_id: int, db: Session = Depends(get_db)):
     if not card:
         raise HTTPException(status_code=404, detail="card not found")
     return card
+
+@app.post("/cards")
+def create_card(card: schemas.CardCreate, db: Session = Depends(get_db)):
+    """新規カードを作成"""
+    db_card = models.Card(
+        user_id=card.user_id,
+        idm=card.idm,
+        qr_token=card.qr_token,
+        label=card.label
+    )
+    db.add(db_card)
+    db.commit()
+    db.refresh(db_card)
+    return db_card
+
+@app.put("/cards/{card_id}")
+def update_card(card_id: int, card: schemas.CardUpdate, db: Session = Depends(get_db)):
+    """カードを更新"""
+    db_card = db.query(models.Card).filter(models.Card.id == card_id).first()
+    if not db_card:
+        raise HTTPException(status_code=404, detail="card not found")
+    
+    for field, value in card.dict(exclude_unset=True).items():
+        setattr(db_card, field, value)
+    
+    db.add(db_card)
+    db.commit()
+    db.refresh(db_card)
+    return db_card
+
+@app.delete("/cards/{card_id}")
+def delete_card(card_id: int, db: Session = Depends(get_db)):
+    """カードを削除"""
+    db_card = db.query(models.Card).filter(models.Card.id == card_id).first()
+    if not db_card:
+        raise HTTPException(status_code=404, detail="card not found")
+    
+    db.delete(db_card)
+    db.commit()
+    return {"status": "ok"}
 
 # ユーザー登録エンドポイント
 @app.post("/register")
