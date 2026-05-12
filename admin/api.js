@@ -1,4 +1,4 @@
-const API_ROOT = 'http://127.0.0.1:8001'
+const API_ROOT = 'http://127.0.0.1:8000'
 
 async function fetchUsers() {
   const res = await fetch(`${API_ROOT}/users`)

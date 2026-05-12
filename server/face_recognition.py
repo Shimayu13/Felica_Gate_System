@@ -8,8 +8,6 @@ import json
 import os
 from io import BytesIO
 from PIL import Image
-from deepface import DeepFace
-import numpy as np
 
 # HEIC形式のサポートを有効化
 try:
@@ -21,6 +19,20 @@ except ImportError:
 # 顔画像を一時保存するディレクトリ
 FACE_TEMP_DIR = "face_temp"
 os.makedirs(FACE_TEMP_DIR, exist_ok=True)
+
+
+def _require_face_dependencies():
+    try:
+        from deepface import DeepFace
+    except ImportError as exc:
+        raise RuntimeError("deepface is not installed") from exc
+
+    try:
+        import numpy as np
+    except ImportError as exc:
+        raise RuntimeError("numpy is not installed") from exc
+
+    return DeepFace, np
 
 def base64_to_image(base64_string: str) -> str:
     """
@@ -84,6 +96,7 @@ def extract_face_embedding(image_path: str) -> list:
     # 検出器を順番に試す（精度の高い順）
     detectors = ["retinaface", "mtcnn", "ssd", "opencv"]
     last_error = None
+    DeepFace, _ = _require_face_dependencies()
 
     try:
         for detector in detectors:
@@ -149,6 +162,7 @@ def verify_faces(face_image_base64: str, stored_embedding: list, threshold: floa
     image_path = base64_to_image(face_image_base64)
 
     try:
+        _, np = _require_face_dependencies()
         input_embedding = extract_face_embedding(image_path)
 
         # コサイン類似度を計算
@@ -204,6 +218,7 @@ def register_face(user_id: int, face_image_base64: str) -> dict:
         }
     """
     try:
+        _require_face_dependencies()
         # 画像を保存
         image_path = base64_to_image(face_image_base64)
 
